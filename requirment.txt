@@ -1,0 +1,4 @@
+streamlit
+docxtpl
+python-docx
+num2words

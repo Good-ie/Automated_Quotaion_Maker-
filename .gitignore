@@ -1,0 +1,5 @@
+__pycache__/
+.venv/
+temp_rendered.docx
+Quotation_*.docx
+template.docx
