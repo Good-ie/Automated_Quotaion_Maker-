@@ -114,7 +114,8 @@ def process_items(items_list, prefix_key):
         cols = st.columns([1.5, 3, 1, 1.5])
         mod = cols[0].text_input(f"{prefix_key}_mod_{idx}", value=item.get("model", ""), label_visibility="collapsed", key=f"{prefix_key}_mod_{idx}_{text_hash}")
         desc = cols[1].text_input(f"{prefix_key}_desc_{idx}", value=item["desc"], label_visibility="collapsed", key=f"{prefix_key}_desc_{idx}_{text_hash}")
-        qty = cols[2].number_input(f"{prefix_key}_qty_{idx}", value=item["qty"], min_value=1, label_visibility="collapsed", key=f"{prefix_key}_qty_{idx}_{text_hash}")
+        safe_qty = max(1, int(item.get("qty", 1)))
+        qty = cols[2].number_input(f"{prefix_key}_qty_{idx}", value=safe_qty, min_value=1, label_visibility="collapsed", key=f"{prefix_key}_qty_{idx}_{text_hash}")
         price = cols[3].number_input(f"{prefix_key}_price_{idx}", value=float(item["price"] or 0.0), label_visibility="collapsed", key=f"{prefix_key}_price_{idx}_{text_hash}")
         
         unit_price = price * (1 + (markup_percent / 100))
