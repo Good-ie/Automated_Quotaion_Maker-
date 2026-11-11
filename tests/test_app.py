@@ -267,9 +267,40 @@ sign_up(at8, "Guess Who", "guess", "GW", "guesspass1", store.signup_code())
 check(store.get_user("guess") is None and any("paused" in e for e in errors(at8)),
       f"after {db.SIGNUP_MAX_WRONG} wrong codes sign-up pauses, even for the right code")
 
-at.session_state["main_tab"] = "Admin"
-at.run()
-check(not at.exception, f"admin tab with sign-up settings renders {at.exception}")
+admin_app = new_app()
+sign_in(admin_app, "mary", "secret123")
+admin_app.session_state["main_tab"] = "Admin"
+admin_app.run()
+check(not admin_app.exception and any("sign-up code" in m.value for m in admin_app.markdown),
+      f"admin sees the company sign-up code {admin_app.exception}")
+
+# 11. a mistaken account can be removed and its username used again ---------------------
+store.log("guesser", "x", "")  # keep the pause from test 10 from mattering below
+with store.engine.begin() as conn:
+    conn.execute(db.activity.delete().where(db.activity.c.action == "Failed sign-up"))
+at9 = new_app()
+sign_up(at9, "Tunde Bello", "tunde", "TX", "another1", store.signup_code())
+check(any("already taken" in e for e in errors(at9)), f"taken username gets a clear message: {errors(at9)}")
+sign_up(at9, "Tola Bello", "tola", "TB", "another1", store.signup_code())
+check(any("initials TB are already used" in e for e in errors(at9)), "taken initials get a clear message")
+store.delete_user("tunde")
+check(store.get_user("tunde") is None, "admin can delete an account that made no quotations")
+sign_up(at9, "Tunde Bello", "tunde", "TB", "freshpass1", store.signup_code())
+check(store.get_user("tunde") is not None and signed_in(at9), "the freed username can sign up again")
+try:
+    store.delete_user("mary")
+    kept = False
+except ValueError:
+    kept = True
+check(kept and store.get_user("mary") is not None, "an account with quotations cannot be deleted")
+boss = new_app()
+sign_in(boss, "mary", "secret123")
+boss.session_state["main_tab"] = "Admin"
+boss.run()
+boss.session_state["manage_user"] = "tunde"
+boss.session_state["main_tab"] = "Admin"  # the test harness does not remember the open tab
+boss.run()
+check(not boss.exception and any(b.label == "Delete account" for b in boss.button), "admin sees the Delete account button")
 
 print(f"\n{'All checks passed' if not failures else f'{len(failures)} check(s) failed'}")
 store.engine.dispose()

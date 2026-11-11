@@ -248,6 +248,28 @@ def _staff(store: db.Store, users: list[dict]) -> None:
                     common.log("Reset password", target)
                     st.toast(f"Password reset. {target} must choose a new one at next sign-in.", icon=":material/check_circle:")
 
+        st.markdown("**Delete account**")
+        made = store.quote_count(target)
+        if target == me:
+            st.caption("You cannot delete your own account.")
+        elif made:
+            st.caption(f"{account['full_name']} has made {made} quotation(s), so the account is kept for the "
+                       "records. Switch it off above instead.")
+        else:
+            st.caption("For a mistaken or duplicate account that never made a quotation. "
+                       "The username and initials become free to use again.")
+            sure = st.checkbox(f"Yes, delete {target} completely", key=f"confirm_delete_{target}")
+            if st.button("Delete account", icon=":material/person_remove:", disabled=not sure,
+                         key=f"delete_{target}"):
+                try:
+                    store.delete_user(target)
+                except ValueError as exc:
+                    st.error(str(exc), icon=":material/error:")
+                else:
+                    common.log("Deleted account", f"{target} ({account['full_name']}, {account['initials']})")
+                    st.toast(f"Account {target} deleted", icon=":material/check_circle:")
+                    st.rerun()
+
 
 # ---------------------------------------------------------------------------
 def _template(store: db.Store) -> None:

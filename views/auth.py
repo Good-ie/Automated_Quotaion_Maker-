@@ -225,9 +225,17 @@ def _sign_up_form(store: db.Store) -> None:
         st.error(str(exc), icon=":material/error:")
         return
     new_user = username.strip().lower()
+    try:
+        user, reason = store.authenticate(new_user, password)
+        if user is None:
+            raise RuntimeError(reason)
+        _start_session(store, user)
+    except Exception:  # anything going wrong here must not leave a half-made account behind
+        store.delete_user(new_user)
+        st.error("Your account could not be finished, so nothing was saved. Please try again.",
+                 icon=":material/error:")
+        return
     store.log(new_user, "Created own account", f"{full_name.strip()} ({initials.strip().upper()})")
-    user, _ = store.authenticate(new_user, password)
-    _start_session(store, user)
     st.rerun()
 
 

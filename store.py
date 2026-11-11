@@ -347,6 +347,13 @@ class Store:
             raise ValueError("Initials must be 2 to 4 letters (they go into the quote reference).")
         if problem := password_problem(password):
             raise ValueError(problem)
+        if self.get_user(username):
+            raise ValueError(f"The username '{username}' is already taken. If it is yours, sign in instead "
+                             "(forgot the password? ask the admin to reset it).")
+        with self.engine.connect() as conn:
+            if conn.execute(select(users.c.username).where(users.c.initials == initials)).first():
+                raise ValueError(f"The initials {initials} are already used by someone else. "
+                                 "Add a letter, e.g. your middle initial.")
         try:
             with self.engine.begin() as conn:
                 conn.execute(
@@ -375,6 +382,29 @@ class Store:
             conn.execute(update(users).where(users.c.username == username).values(**values))
         if values.get("active") is False:
             self.end_user_sessions(username)
+
+    def quote_count(self, username: str) -> int:
+        with self.engine.connect() as conn:
+            return conn.execute(
+                select(func.count()).select_from(quotes).where(quotes.c.username == username)
+            ).scalar_one()
+
+    def delete_user(self, username: str) -> None:
+        """Remove an account completely. Only allowed if it never made a quotation:
+        otherwise its history must stay, so switch it off instead."""
+        target = self.get_user(username)
+        if target is None:
+            return
+        if self.quote_count(username):
+            raise ValueError("This account has made quotations, so it is kept for the records. Switch it off instead.")
+        if target["role"] == "admin" and not any(
+            u["role"] == "admin" and u["active"] and u["username"] != username for u in self.list_users()
+        ):
+            raise ValueError("Keep at least one active admin account.")
+        with self.engine.begin() as conn:
+            conn.execute(delete(sessions).where(sessions.c.username == username))
+            conn.execute(delete(drafts).where(drafts.c.username == username))
+            conn.execute(delete(users).where(users.c.username == username))
 
     def set_password(self, username: str, password: str, must_change: bool = False) -> None:
         """must_change=True is an admin reset: it also signs the person out everywhere."""
