@@ -35,8 +35,9 @@ Word template. Nothing is lost when the app restarts. Total cost: ₦0.
 4. **First visit.** Open the app link, create the **admin account** (it asks for the
    `setup_key`), then go to **Admin › Template** and upload `template.docx`. In
    **Admin › Backup** you can import the old `product_catalog.json` and `quotes_history.json`.
-5. **Add staff** in **Admin › Staff accounts** with a temporary password. They choose their own
-   password at first sign-in. Share the app link with them.
+5. **Let staff sign up.** In **Admin › Staff accounts** you'll find the company **sign-up code**.
+   Send it to your staff with the app link; they create their own accounts on the sign-in page
+   (no approval needed). You can also add accounts yourself there.
 
 **Good to know about the free plans:**
 * If nobody uses the app for a while it sleeps; the next visitor waits about 30 seconds while it wakes up.
@@ -44,6 +45,7 @@ Word template. Nothing is lost when the app restarts. Total cost: ₦0.
 * Supabase's free plan has no automatic backups: download one from **Admin › Backup** about once a week (the app reminds you).
 
 ### 🔐 Accounts and accountability
+* **Sign-up:** staff create their own account on the sign-in page with the company sign-up code (no approval). Each sign-up appears in the activity log and on the admin overview; switch off any account you don't recognise, or click **New code** if the code leaks. 10 wrong codes pause sign-up for 15 minutes.
 * **Staff** sign in, prepare quotations and see **My quotations** (their own history, re-download any of them).
 * **Admin** also sees **All quotations** (filter by staff), and the **Admin** tab: this month's quotations and value per staff member, the full **activity log** (sign-ins, failed sign-ins, quotations generated, past quotations downloaded, cancellations, account changes), staff accounts, the template and backups.
 * Nothing is overwritten: generating again with the same reference saves a new **revision**; a reference already used for another client is refused; cancelled quotations stay in history.

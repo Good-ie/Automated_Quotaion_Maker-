@@ -154,25 +154,81 @@ def setup_screen(store: db.Store) -> None:
 
 def login_screen(store: db.Store) -> None:
     common.hero("Rehoboth Systems & Project Limited · Staff sign-in")
+    signup_open = store.signup_enabled()
     with common.centered(), st.container(border=True):
-        st.subheader("Sign in", icon=":material/lock:")
-        with st.form("login"):
-            username = st.text_input("Username", autocomplete="username")
-            password = st.text_input("Password", type="password", autocomplete="current-password")
-            submitted = st.form_submit_button("Sign in", type="primary", icon=":material/login:", width="stretch")
-        if submitted:
-            if not username.strip() or not password:
-                st.error("Enter your username and password.", icon=":material/error:")
-                return
-            user, reason = store.authenticate(username, password)
-            if user is None:
-                store.log(username.strip().lower()[:40], "Failed sign-in", reason)
-                st.error(reason, icon=":material/error:")
-                return
-            store.log(user["username"], "Signed in")
-            _start_session(store, user)
-            st.rerun()
-        st.caption("Forgot your password? Ask the admin to reset it.")
+        if signup_open:
+            sign_in_tab, sign_up_tab = st.tabs(["Sign in", "Create an account"])
+        else:
+            sign_in_tab, sign_up_tab = st.container(), None
+        with sign_in_tab:
+            _sign_in_form(store)
+        if sign_up_tab is not None:
+            with sign_up_tab:
+                _sign_up_form(store)
+
+
+def _sign_in_form(store: db.Store) -> None:
+    st.subheader("Sign in", icon=":material/lock:")
+    with st.form("login"):
+        username = st.text_input("Username", autocomplete="username", key="login_username")
+        password = st.text_input("Password", type="password", autocomplete="current-password", key="login_password")
+        submitted = st.form_submit_button("Sign in", type="primary", icon=":material/login:", width="stretch")
+    if submitted:
+        if not username.strip() or not password:
+            st.error("Enter your username and password.", icon=":material/error:")
+            return
+        user, reason = store.authenticate(username, password)
+        if user is None:
+            store.log(username.strip().lower()[:40], "Failed sign-in", reason)
+            st.error(reason, icon=":material/error:")
+            return
+        store.log(user["username"], "Signed in")
+        _start_session(store, user)
+        st.rerun()
+    st.caption("Forgot your password? Ask the admin to reset it.")
+
+
+def _sign_up_form(store: db.Store) -> None:
+    """Staff create their own account with the company sign-up code. No approval step."""
+    st.subheader("Create your staff account", icon=":material/person_add:")
+    st.caption("You need the company sign-up code. Ask a colleague or the admin for it.")
+    with st.form("signup"):
+        full_name = st.text_input("Full name", key="signup_full_name")
+        c1, c2 = st.columns([2, 1])
+        username = c1.text_input("Username", help="You will use this to sign in, e.g. jade", key="signup_username")
+        initials = c2.text_input("Initials", max_chars=4, help="Goes into your quote references, e.g. RSL/JA/…",
+                                 key="signup_initials")
+        password = st.text_input("Password", type="password", help=f"At least {db.MIN_PASSWORD} characters.",
+                                 key="signup_password")
+        password2 = st.text_input("Repeat password", type="password", key="signup_password2")
+        code = st.text_input("Company sign-up code", type="password", key="signup_code")
+        submitted = st.form_submit_button("Create my account", type="primary", icon=":material/check:", width="stretch")
+    if not submitted:
+        return
+    if store.signup_paused():
+        st.error(f"Too many wrong sign-up codes. Sign-up is paused; try again in {db.SIGNUP_PAUSE_MINUTES} minutes.",
+                 icon=":material/error:")
+        return
+    if not store.check_signup_code(code):
+        store.log(username.strip().lower()[:40] or "?", "Failed sign-up", "wrong sign-up code")
+        st.error("The sign-up code is wrong.", icon=":material/error:")
+        return
+    if not full_name.strip() or not username.strip():
+        st.error("Enter your full name and a username.", icon=":material/error:")
+        return
+    if password != password2:
+        st.error("The two passwords are different.", icon=":material/error:")
+        return
+    try:
+        store.create_user(username, full_name, initials, "staff", password, must_change_password=False)
+    except ValueError as exc:
+        st.error(str(exc), icon=":material/error:")
+        return
+    new_user = username.strip().lower()
+    store.log(new_user, "Created own account", f"{full_name.strip()} ({initials.strip().upper()})")
+    user, _ = store.authenticate(new_user, password)
+    _start_session(store, user)
+    st.rerun()
 
 
 def _password_form(store: db.Store, form_key: str, need_current: bool) -> None:

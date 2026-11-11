@@ -54,6 +54,8 @@ WAT = dt.timezone(dt.timedelta(hours=1), "WAT")
 MAX_ATTEMPTS = 5          # wrong passwords in a row before the account is locked
 LOCK_MINUTES = 15
 MIN_PASSWORD = 6
+SIGNUP_MAX_WRONG = 10      # wrong sign-up codes (from anyone) before sign-up pauses
+SIGNUP_PAUSE_MINUTES = 15
 _PBKDF2_ROUNDS = 240_000
 
 
@@ -259,6 +261,41 @@ class Store:
             done = conn.execute(update(settings).where(settings.c.key == key).values(value=value))
             if not done.rowcount:
                 conn.execute(insert(settings).values(key=key, value=value))
+
+    # -- staff self sign-up ------------------------------------------------------
+    def signup_enabled(self) -> bool:
+        return self.get_setting("signup_enabled", "1") == "1"
+
+    def set_signup_enabled(self, enabled: bool) -> None:
+        self.set_setting("signup_enabled", "1" if enabled else "0")
+
+    def signup_code(self) -> str:
+        """The company code staff need to create an account (made automatically)."""
+        code = self.get_setting("signup_code")
+        return code or self.new_signup_code()
+
+    def new_signup_code(self) -> str:
+        letters = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I/L mix-ups
+        part = lambda: "".join(secrets.choice(letters) for _ in range(4))  # noqa: E731
+        code = f"RSL-{part()}-{part()}"
+        self.set_setting("signup_code", code)
+        return code
+
+    def check_signup_code(self, code: str) -> bool:
+        if not self.signup_enabled():
+            return False
+        typed = code.strip().upper().replace(" ", "")
+        return hmac.compare_digest(typed, self.signup_code())
+
+    def signup_paused(self) -> bool:
+        """Too many wrong codes recently (someone guessing): pause sign-up for a while."""
+        since = now() - dt.timedelta(minutes=SIGNUP_PAUSE_MINUTES)
+        with self.engine.connect() as conn:
+            wrong = conn.execute(
+                select(func.count()).select_from(activity)
+                .where(activity.c.action == "Failed sign-up", activity.c.at >= since)
+            ).scalar_one()
+        return wrong >= SIGNUP_MAX_WRONG
 
     # -- activity log ---------------------------------------------------------
     def log(self, username: str, action: str, details: str = "") -> None:

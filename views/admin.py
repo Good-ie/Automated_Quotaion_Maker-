@@ -55,6 +55,15 @@ def _overview(store: db.Store, users: list[dict]) -> None:
     if days is None or days >= BACKUP_REMINDER_DAYS:
         st.caption(":orange[:material/backup:] Time for a backup: open the **Backup** tab below.")
 
+    week_ago = db.now() - dt.timedelta(days=7)
+    newcomers = [u for u in users if u["created_at"] >= week_ago and u["username"] != common.user()["username"]]
+    if newcomers:
+        st.caption(
+            ":material/person_add: **New accounts this week:** "
+            + "; ".join(f"{u['full_name']} ({u['username']}, {u['created_at']:%d %b})" for u in newcomers)
+            + ". Not someone you know? Switch the account off in **Staff accounts**."
+        )
+
     unfinished = store.list_drafts()
     if unfinished:
         full_names = {u["username"]: u["full_name"] for u in users}
@@ -132,8 +141,34 @@ def _activity(store: db.Store, names: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+def _new_code() -> None:
+    common.get_store().new_signup_code()
+    common.log("Changed sign-up code", "the old code no longer works")
+
+
+def _signup_settings(store: db.Store) -> None:
+    with st.container(border=True):
+        st.markdown("**Staff sign-up**")
+        enabled = st.toggle(
+            "Staff can create their own accounts", value=store.signup_enabled(), key="signup_enabled",
+            help="They need the company sign-up code below. No approval is needed; every new account "
+            "appears in the activity log and you can switch any account off.",
+        )
+        if enabled != store.signup_enabled():
+            store.set_signup_enabled(enabled)
+            common.log("Changed sign-up", "turned on" if enabled else "turned off")
+            st.rerun()
+        if enabled:
+            with st.container(horizontal=True, vertical_alignment="center"):
+                st.markdown(f"Company sign-up code: **`{store.signup_code()}`**")
+                st.button("New code", icon=":material/autorenew:", on_click=_new_code, key="new_signup_code",
+                          help="Use this if the code got to someone outside the company. The old code stops working.")
+            st.caption("Share the code with your staff (e.g. on the staff WhatsApp group) together with the app link.")
+
+
 def _staff(store: db.Store, users: list[dict]) -> None:
     me = common.user()["username"]
+    _signup_settings(store)
     df = pd.DataFrame(users)
     st.dataframe(
         df,

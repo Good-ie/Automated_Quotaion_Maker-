@@ -221,6 +221,56 @@ check(store.get_draft("mary") is None, "generating the quotation clears the draf
 check(store.list_quotes()[0]["client_name"] == "Draft Client Ltd" and store.list_quotes()[0]["items_count"] == 2,
       "restored draft generated with both items")
 
+# 10. staff create their own accounts with the company code ----------------------------
+browser["cookie"] = None
+
+
+def sign_up(app, full_name, username, initials, password, code):
+    form = {t.key: t for t in app.text_input}
+    form["signup_full_name"].input(full_name)
+    form["signup_username"].input(username)
+    form["signup_initials"].input(initials)
+    form["signup_password"].input(password)
+    form["signup_password2"].input(password)
+    form["signup_code"].input(code)
+    button(app, "Create my account").click().run()
+
+
+code = store.signup_code()
+check(code.startswith("RSL-") and len(code) == 13, f"a sign-up code was made automatically: {code[:4]}…")
+at7 = new_app()
+check("Create an account" in [t.label for t in at7.tabs], "sign-in page offers 'Create an account'")
+sign_up(at7, "Tunde Bello", "tunde", "TB", "tundepass1", "RSL-WRONG-CODE")
+check(any("sign-up code is wrong" in e for e in errors(at7)) and store.get_user("tunde") is None,
+      "a wrong sign-up code is refused")
+sign_up(at7, "Tunde Bello", "tunde", "TB", "tundepass1", code.lower())
+tunde = store.get_user("tunde")
+check(tunde is not None and tunde["role"] == "staff" and signed_in(at7)
+      and "Admin" not in [t.label for t in at7.tabs], "the right code creates a staff account and signs in")
+check(at7.session_state["quote_ref"].startswith("RSL/TB/"), "new staff member's references use their initials")
+acts = [(a["username"], a["action"]) for a in store.activity()]
+check(("tunde", "Created own account") in acts and ("tunde", "Failed sign-up") in acts,
+      "the admin's activity log shows the sign-up and the wrong code")
+
+old_code = code
+store.new_signup_code()
+check(not store.check_signup_code(old_code), "after 'New code' the old code stops working")
+
+store.set_signup_enabled(False)
+check("Create an account" not in [t.label for t in new_app().tabs], "admin can switch sign-up off")
+store.set_signup_enabled(True)
+
+for _ in range(db.SIGNUP_MAX_WRONG):
+    store.log("guesser", "Failed sign-up", "wrong sign-up code")
+at8 = new_app()
+sign_up(at8, "Guess Who", "guess", "GW", "guesspass1", store.signup_code())
+check(store.get_user("guess") is None and any("paused" in e for e in errors(at8)),
+      f"after {db.SIGNUP_MAX_WRONG} wrong codes sign-up pauses, even for the right code")
+
+at.session_state["main_tab"] = "Admin"
+at.run()
+check(not at.exception, f"admin tab with sign-up settings renders {at.exception}")
+
 print(f"\n{'All checks passed' if not failures else f'{len(failures)} check(s) failed'}")
 store.engine.dispose()
 sys.exit(1 if failures else 0)
