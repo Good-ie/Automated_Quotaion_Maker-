@@ -25,7 +25,7 @@ def db_error_hint(exc: Exception) -> str:
     text = str(exc).lower()
     if "password authentication failed" in text:
         return "The database password in the app secrets is wrong (password = \"...\")."
-    if "tenant or user not found" in text:
+    if "tenant or user not found" in text or "tenant/user" in text:
         return ("The user or host does not match the project. user must be postgres.<project id> "
                 "and host must be the Session pooler host, both copied from Supabase › Connect.")
     if "could not translate host name" in text or "name or service not known" in text:
