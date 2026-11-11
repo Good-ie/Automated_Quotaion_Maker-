@@ -179,7 +179,14 @@ def _sign_in_form(store: db.Store) -> None:
             return
         user, reason = store.authenticate(username, password)
         if user is None:
-            store.log(username.strip().lower()[:40], "Failed sign-in", reason)
+            # the person sees one message for both cases; the admin's log says which it was
+            if store.get_user(username) is None:
+                detail = "no account with this username (not signed up yet, or a typo)"
+            elif reason.startswith("Wrong"):
+                detail = "wrong password"
+            else:
+                detail = reason
+            store.log(username.strip().lower()[:40], "Failed sign-in", detail)
             st.error(reason, icon=":material/error:")
             return
         store.log(user["username"], "Signed in")
