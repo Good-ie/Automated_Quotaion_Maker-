@@ -23,7 +23,7 @@ try:
     if not st.session_state.get("has_accounts"):
         st.session_state.has_accounts = store.user_count() > 0
 except SQLAlchemyError as exc:
-    common.get_store.clear()  # try again from scratch on the next refresh
+    common._connect.clear()  # try again from scratch on the next refresh
     print(f"Database connection failed: {exc!r}", file=sys.stderr)  # full detail: app logs only
     common.hero("Rehoboth Systems & Project Limited")
     st.error(

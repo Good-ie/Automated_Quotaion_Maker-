@@ -1,6 +1,8 @@
 """Shared helpers for the screens: database connection, signed-in user, formatting."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 import store as db
@@ -13,11 +15,19 @@ def _secret_section(name: str) -> dict | None:
         return None
 
 
-@st.cache_resource(show_spinner="Connecting to the database…")
-def get_store() -> db.Store:
+@st.cache_resource(show_spinner="Connecting to the database…", max_entries=1)
+def _connect(code_version: int) -> db.Store:
     store = db.Store(db.database_url(_secret_section("database")))
     store.import_local_files()
     return store
+
+
+def get_store() -> db.Store:
+    """The shared database connection. When store.py is updated (a new version pushed to
+    GitHub), the old connection is replaced so it never runs outdated code."""
+    root = Path(db.__file__).parent
+    version = max(int(f.stat().st_mtime) for f in [*root.glob("*.py"), *root.glob("views/*.py")])
+    return _connect(version)
 
 
 def db_error_hint(exc: Exception) -> str:
