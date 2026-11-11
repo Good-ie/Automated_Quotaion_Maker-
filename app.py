@@ -3,6 +3,7 @@
 Run locally:   streamlit run app.py
 Online:        deployed on Streamlit Community Cloud, data kept in Supabase (see README).
 """
+import sys
 from pathlib import Path
 
 import streamlit as st
@@ -21,13 +22,16 @@ try:
     store = common.get_store()
     if not st.session_state.get("has_accounts"):
         st.session_state.has_accounts = store.user_count() > 0
-except SQLAlchemyError:
+except SQLAlchemyError as exc:
+    common.get_store.clear()  # try again from scratch on the next refresh
+    print(f"Database connection failed: {exc!r}", file=sys.stderr)  # full detail: app logs only
     common.hero("Rehoboth Systems & Project Limited")
     st.error(
         "Cannot reach the database. Check the internet connection, or (admin) check that the "
         "Supabase project is not paused, then refresh this page.",
         icon=":material/cloud_off:",
     )
+    st.caption(f"**Admin hint:** {common.db_error_hint(exc)}")
     st.stop()
 
 # ---------------------------------------------------------------- sign-in gate

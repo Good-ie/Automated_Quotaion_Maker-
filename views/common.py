@@ -20,6 +20,26 @@ def get_store() -> db.Store:
     return store
 
 
+def db_error_hint(exc: Exception) -> str:
+    """Plain-English reason for a failed database connection (never shows secrets)."""
+    text = str(exc).lower()
+    if "password authentication failed" in text:
+        return "The database password in the app secrets is wrong (password = \"...\")."
+    if "tenant or user not found" in text:
+        return ("The user or host does not match the project. user must be postgres.<project id> "
+                "and host must be the Session pooler host, both copied from Supabase › Connect.")
+    if "could not translate host name" in text or "name or service not known" in text:
+        return "The host name in the app secrets is wrong. Copy it from Supabase › Connect › Session pooler."
+    if "network is unreachable" in text or "cannot assign requested address" in text:
+        return ("This looks like the 'Direct connection' host (db.<id>.supabase.co), which Streamlit Cloud "
+                "cannot reach. Use the Session pooler host instead.")
+    if "timeout" in text or "timed out" in text:
+        return "The database did not answer. Check the host and port (5432), and that the project is not paused."
+    if "max clients" in text or "too many" in text:
+        return "Too many connections at once. Wait a minute and refresh."
+    return "See Manage app › Logs for the technical error."
+
+
 def setup_key() -> str | None:
     """Optional code needed to create the very first (admin) account online."""
     app = _secret_section("app") or {}
