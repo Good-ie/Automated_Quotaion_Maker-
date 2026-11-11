@@ -2,4 +2,14 @@ __pycache__/
 .venv/
 temp_rendered.docx
 Quotation_*.docx
+~$*
+
+# company template (signature, bank details): stored in the database instead
 template.docx
+
+# private data and passwords: never commit
+.streamlit/secrets.toml
+data/
+quotes_history.json
+product_catalog.json
+*_backup_*.json

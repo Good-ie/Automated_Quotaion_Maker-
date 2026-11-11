@@ -1,0 +1,129 @@
+/* Rehoboth Quotation Maker: motion layer.
+   Colours come from the theme (resypl.com: emerald green + orange).
+   Every animation targets a keyed container (.st-key-*) so nothing else is affected,
+   and all motion is switched off for people who ask their system for reduced motion. */
+
+:root {
+  --rq-green: #047857;
+  --rq-green-dark: #064e3b;
+  --rq-orange: #ea580c;
+  --rq-orange-soft: rgba(234, 88, 12, 0.35);
+}
+
+/* ---- 1. Page entrance: content rises in gently on first load ---- */
+@keyframes rq-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+[data-testid="stMainBlockContainer"] {
+  animation: rq-rise 0.6s ease-out both;
+}
+
+/* ---- 2. Header: animated "power line" in brand colours under the title ---- */
+@keyframes rq-flow {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.st-key-hero {
+  position: relative;
+  padding-bottom: 0.9rem;
+}
+.st-key-hero::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--rq-green), #10b981, var(--rq-orange), #10b981, var(--rq-green));
+  background-size: 200% 100%;
+  animation: rq-flow 6s linear infinite;
+}
+/* the bolt icon in the title gives a soft flicker, like a charge */
+@keyframes rq-charge {
+  0%, 88%, 100% { opacity: 1; }
+  90% { opacity: 0.45; }
+  92% { opacity: 1; }
+  94% { opacity: 0.6; }
+}
+.st-key-hero h1 [data-testid="stIconMaterial"] {
+  color: var(--rq-orange);
+  animation: rq-charge 5s ease-in-out infinite;
+}
+
+/* ---- 3. Total cards: fade in one after another, lift on hover ---- */
+@keyframes rq-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+[class*="st-key-totals"] [data-testid="stMetric"] {
+  animation: rq-pop 0.45s ease-out both;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+[class*="st-key-totals"] > div:nth-child(2) [data-testid="stMetric"] { animation-delay: 0.06s; }
+[class*="st-key-totals"] > div:nth-child(3) [data-testid="stMetric"] { animation-delay: 0.12s; }
+[class*="st-key-totals"] > div:nth-child(4) [data-testid="stMetric"] { animation-delay: 0.18s; }
+[class*="st-key-totals"] > div:nth-child(5) [data-testid="stMetric"] { animation-delay: 0.24s; }
+[class*="st-key-totals"] [data-testid="stMetric"]:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(6, 78, 59, 0.12);
+}
+/* the grand total card is always last: give it a green accent */
+[class*="st-key-totals"] > div:last-child [data-testid="stMetric"] {
+  border-left: 4px solid var(--rq-green);
+}
+
+/* ---- 4. "The message mentions markup 15%..." suggestion slides in ---- */
+@keyframes rq-slide {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+[class*="st-key-suggest"] {
+  animation: rq-slide 0.4s ease-out both;
+  border-left: 4px solid var(--rq-orange) !important;
+}
+
+/* ---- 5. Generate button: soft orange glow so it is easy to find ---- */
+@keyframes rq-glow {
+  0%   { box-shadow: 0 0 0 0 var(--rq-orange-soft); }
+  70%  { box-shadow: 0 0 0 12px rgba(234, 88, 12, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(234, 88, 12, 0); }
+}
+.st-key-generate button:not(:disabled) {
+  animation: rq-glow 2.2s ease-out infinite;
+}
+
+/* ---- 6. Download button arrives with a small bounce ---- */
+@keyframes rq-arrive {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(-3px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.st-key-download button {
+  animation: rq-arrive 0.55s ease-out both;
+  border-color: var(--rq-green);
+  color: var(--rq-green);
+}
+
+/* ---- 7. All buttons: gentle lift on hover ---- */
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"] {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 78, 59, 0.15);
+}
+
+/* the invisible element that writes the session cookie takes no space */
+.st-key-rq_cookie { display: none; }
+
+/* ---- Respect "reduce motion" accessibility settings ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

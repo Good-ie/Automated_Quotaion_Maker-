@@ -1,0 +1,30 @@
+# Colours taken from https://resypl.com (Tailwind emerald / orange / gray palette)
+
+[theme]
+base = "light"
+primaryColor = "#EA580C"              # orange-600: the site's main buttons
+backgroundColor = "#F4F8F6"           # "mint mist": soft off-white tinted with the site's emerald
+secondaryBackgroundColor = "#FFFFFF"  # input boxes stay pure white so they stand out
+textColor = "#111827"                 # gray-900: the site's body text
+linkColor = "#047857"                 # emerald-700: the site's green text/links
+borderColor = "#D3E2DA"               # soft green-grey border to match the background
+baseRadius = "medium"
+showWidgetBorder = true
+font = "sans-serif"                   # the site uses the system sans-serif font
+headingFontWeights = [700, 600, 600, 600, 500, 500]
+dataframeHeaderBackgroundColor = "#047857"  # emerald-700
+dataframeHeaderTextColor = "#FFFFFF"
+greenColor = "#047857"
+orangeColor = "#EA580C"
+blueColor = "#2563EB"
+
+[theme.sidebar]
+backgroundColor = "#064E3B"           # emerald-900: the site's dark green sections
+secondaryBackgroundColor = "#065F46"  # emerald-800
+textColor = "#ECFDF5"                 # emerald-50
+borderColor = "#047857"               # emerald-700
+primaryColor = "#FB923C"              # orange-400: readable on dark green
+linkColor = "#A7F3D0"                 # emerald-200
+
+[client]
+toolbarMode = "minimal"
