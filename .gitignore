@@ -13,3 +13,6 @@ data/
 quotes_history.json
 product_catalog.json
 *_backup_*.json
+
+# demo documents (contain company bank details)
+demo/

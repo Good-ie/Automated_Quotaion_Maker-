@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 import quote_engine as qe
-from views import common
+from views import common, invoices
 from views.quote import lines_table
 
 STATUS_LABELS = {"active": "Sent", "void": "Cancelled", "legacy": "Old record"}
@@ -134,6 +134,9 @@ def _detail(quote_id: int, names: dict) -> None:
             elif st.button("Prepare Word document", icon=":material/description:", key=f"prepare_{quote_id}"):
                 _prepare(q)
                 st.rerun()
+
+            st.divider()
+            invoices.quote_section(q)
 
         if common.is_admin() and q["status"] == "active":
             with st.expander("Cancel this quotation", icon=":material/block:"):

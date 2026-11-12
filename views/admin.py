@@ -9,9 +9,15 @@ import streamlit as st
 
 import quote_engine as qe
 import store as db
-from views import common
+from views import common, invoices
 
 BACKUP_REMINDER_DAYS = 7
+COMPANY_LABELS = {
+    "name": "Company name", "address": "Address", "phones": "Phone numbers", "email": "Email",
+    "tin": "TIN (printed on every invoice and waybill)", "account_name": "Bank account name",
+    "bank": "Bank", "bank_address": "Bank branch / address", "account_number": "Account number",
+    "signatory": "Signature line",
+}
 
 
 def render() -> None:
@@ -19,9 +25,13 @@ def render() -> None:
     users = store.list_users()
     names = {u["username"]: u["full_name"] for u in users}
     _overview(store, users)
-    activity_tab, staff_tab, template_tab, backup_tab = st.tabs(
-        ["Activity log", "Staff accounts", "Template", "Backup"]
+    money_tab, activity_tab, staff_tab, company_tab, template_tab, backup_tab = st.tabs(
+        ["Money per month", "Activity log", "Staff accounts", "Company details", "Template", "Backup"]
     )
+    with money_tab:
+        invoices.monthly_summary(users)
+    with company_tab:
+        _company(store)
     with activity_tab:
         _activity(store, names)
     with staff_tab:
@@ -269,6 +279,47 @@ def _staff(store: db.Store, users: list[dict]) -> None:
                     common.log("Deleted account", f"{target} ({account['full_name']}, {account['initials']})")
                     st.toast(f"Account {target} deleted", icon=":material/check_circle:")
                     st.rerun()
+
+
+# ---------------------------------------------------------------------------
+def _company(store: db.Store) -> None:
+    st.caption("Printed on invoices and waybills. Changes apply to new invoices; old ones keep the details "
+               "they were made with.")
+    current = invoices.company_details()
+    with st.form("company_details"):
+        c1, c2 = st.columns(2)
+        values = {}
+        for i, (key, label) in enumerate(COMPANY_LABELS.items()):
+            values[key] = (c1 if i % 2 == 0 else c2).text_input(label, value=current.get(key, ""), key=f"co_{key}")
+        if st.form_submit_button("Save company details", icon=":material/save:", type="primary"):
+            changed = [COMPANY_LABELS[k] for k in values if values[k].strip() != current.get(k, "")]
+            store.set_company({k: v.strip() for k, v in values.items()})
+            common.log("Changed company details", ", ".join(changed) or "no changes")
+            st.toast("Company details saved", icon=":material/check_circle:")
+            st.rerun()
+
+    logo_col, sig_col = st.columns(2, gap="large")
+    for col, key, label, help_text in (
+        (logo_col, "logo", "Logo", "Shown at the top right of invoices and waybills."),
+        (sig_col, "signature", "Signature", "Taken from the quotation template unless you upload one."),
+    ):
+        with col:
+            st.markdown(f"**{label}**")
+            image = invoices.logo_bytes() if key == "logo" else invoices.signature_bytes()
+            if image:
+                st.image(image, width=220)
+            else:
+                st.caption("None found.")
+            upload = st.file_uploader(f"Replace {label.lower()}", type=["png", "jpg", "jpeg"], help=help_text,
+                                      key=f"upload_{key}")
+            if upload is not None and st.button(f"Use this {label.lower()}", key=f"save_{key}"):
+                store.set_image(key, upload.getvalue())
+                common.log(f"Changed {label.lower()}", upload.name)
+                st.rerun()
+            if store.get_image(key) and st.button("Go back to the default", type="tertiary", key=f"reset_{key}"):
+                store.set_image(key, None)
+                common.log(f"Reset {label.lower()} to default")
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------

@@ -54,6 +54,13 @@ Word template. Nothing is lost when the app restarts. Total cost: ₦0.
 * **10-minute sessions:** after signing in, a refresh keeps you signed in. After 10 minutes with no activity you are signed out automatically and the session key is deleted (from the browser and the database). Signing out, an admin switching an account off, or an admin password reset also delete it immediately.
 * **Drafts:** the quotation being prepared is saved as you work. After signing in again, the app offers to continue it, with your edits intact. The admin overview lists unfinished quotations.
 
+### 🧾 Invoices and waybills
+* **Create invoice** (any staff member): open a quotation in **My quotations**, then **Create invoice**. Everything is filled in from the quotation (client prices after markup); add the LPO number and date, adjust items if the LPO differs, choose the payment terms (default 45 days).
+* **Part payments are flexible:** invoice the full amount, any **percentage**, or a **fixed amount**. The next invoice for the same quotation starts from what is left (balance), and the app never lets the total go over the contract value.
+* Invoice numbers: `RESYPL/<year>/<month>/<number>`, one sequence for the whole company.
+* In **My invoices**: download any invoice again, make its **waybill / delivery note** (no prices, space for the client's stamp), and record money received (**Unpaid / Part paid / Paid**, overdue shown from the due date).
+* **Admin › Money per month:** invoiced, received and outstanding per month, per staff member this month, and overdue invoices. **Admin › Company details:** TIN, bank details, address, logo and signature printed on invoices.
+
 ### 🚀 Running it on your own PC (for testing)
 ```bash
 pip install -r requirements.txt

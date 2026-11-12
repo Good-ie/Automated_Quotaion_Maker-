@@ -10,6 +10,7 @@ would fill the free database quickly. Rebuilding from the data gives the same do
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import hashlib
 import hmac
@@ -56,6 +57,7 @@ LOCK_MINUTES = 15
 MIN_PASSWORD = 6
 SIGNUP_MAX_WRONG = 10      # wrong sign-up codes (from anyone) before sign-up pauses
 SIGNUP_PAUSE_MINUTES = 15
+INVOICE_PREFIX = "RESYPL"
 _PBKDF2_ROUNDS = 240_000
 
 
@@ -168,7 +170,29 @@ drafts = Table(
     Column("data", Text, nullable=False),
 )
 
-_CATALOG_FIELDS =["description", "model", "unit_cost", "availability", "last_quoted", "times_quoted"]
+invoices = Table(
+    "rq_invoices",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("number", String(40), nullable=False, unique=True),  # RESYPL/2026/11/001
+    Column("quote_id", Integer, index=True),
+    Column("quote_reference", String(60), nullable=False, default=""),
+    Column("option_index", Integer, nullable=False, default=0),
+    Column("created_at", DateTime, nullable=False, index=True),
+    Column("username", String(40), nullable=False, index=True),
+    Column("client_name", String(200), nullable=False),
+    Column("invoice_date", String(10), nullable=False),  # ISO date
+    Column("due_date", String(10), nullable=False),      # ISO date
+    Column("contract_total", Float, nullable=False, default=0.0),
+    Column("amount_due", Float, nullable=False, default=0.0),
+    Column("amount_paid", Float, nullable=False, default=0.0),
+    Column("status", String(12), nullable=False, default="unpaid"),  # unpaid / part_paid / paid / cancelled
+    Column("cancel_reason", Text),
+    Column("waybill_date", String(10)),
+    Column("data", Text, nullable=False),  # everything needed to rebuild the documents
+)
+
+_CATALOG_FIELDS = ["description", "model", "unit_cost", "availability", "last_quoted", "times_quoted"]
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +629,114 @@ class Store:
                 update(quotes).where(quotes.c.id == quote_id).values(status="void", void_reason=reason)
             )
 
+    # -- invoices ------------------------------------------------------------------
+    def next_invoice_number(self, on: dt.date) -> str:
+        """RESYPL/<YYYY>/<MM>/<NNN>, one sequence for the whole company per month."""
+        prefix = f"{INVOICE_PREFIX}/{on:%Y/%m}/"
+        with self.engine.connect() as conn:
+            used = conn.execute(
+                select(invoices.c.number).where(invoices.c.number.like(prefix + "%"))
+            ).scalars().all()
+        numbers = [int(n.rsplit("/", 1)[-1]) for n in used if n.rsplit("/", 1)[-1].isdigit()]
+        return f"{prefix}{(max(numbers) + 1) if numbers else 1:03d}"
+
+    def save_invoice(self, *, on: dt.date, data_for_number, **values) -> tuple[int, str]:
+        """Insert an invoice with the next free number. data_for_number(number) returns the
+        JSON-ready document data, so the number printed always matches the one saved."""
+        for _ in range(5):  # two people creating invoices at the same moment: retry
+            number = self.next_invoice_number(on)
+            try:
+                with self.engine.begin() as conn:
+                    new_id = conn.execute(
+                        insert(invoices).values(
+                            number=number, created_at=now(), amount_paid=0.0, status="unpaid",
+                            data=json.dumps(data_for_number(number), default=str), **values,
+                        )
+                    ).inserted_primary_key[0]
+                return new_id, number
+            except IntegrityError:
+                continue
+        raise RuntimeError("Could not save the invoice. Please try again.")
+
+    def list_invoices(self, username: str | None = None) -> list[dict]:
+        q = select(*[c for c in invoices.c if c.name != "data"]).order_by(
+            invoices.c.created_at.desc(), invoices.c.id.desc()
+        )
+        if username:
+            q = q.where(invoices.c.username == username)
+        with self.engine.connect() as conn:
+            return [_row(r) for r in conn.execute(q)]
+
+    def invoices_for_quote(self, quote_id: int) -> list[dict]:
+        q = select(*[c for c in invoices.c if c.name != "data"]).where(
+            invoices.c.quote_id == quote_id
+        ).order_by(invoices.c.id)
+        with self.engine.connect() as conn:
+            return [_row(r) for r in conn.execute(q)]
+
+    def invoiced_so_far(self, quote_id: int, option_index: int) -> float:
+        """Total already invoiced (not cancelled) for one option of a quotation."""
+        with self.engine.connect() as conn:
+            total = conn.execute(
+                select(func.sum(invoices.c.amount_due)).where(
+                    invoices.c.quote_id == quote_id,
+                    invoices.c.option_index == option_index,
+                    invoices.c.status != "cancelled",
+                )
+            ).scalar()
+        return round(total or 0.0, 2)
+
+    def get_invoice(self, invoice_id: int) -> dict | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(select(invoices).where(invoices.c.id == invoice_id)).first()
+        if not r:
+            return None
+        out = _row(r)
+        out["data"] = json.loads(out["data"])
+        return out
+
+    def set_invoice_payment(self, invoice_id: int, amount_paid: float) -> str:
+        """Record money received; the status follows from it. Returns the new status."""
+        inv = self.get_invoice(invoice_id)
+        amount_paid = max(0.0, round(amount_paid, 2))
+        status = "paid" if amount_paid >= inv["amount_due"] - 0.005 else "part_paid" if amount_paid > 0 else "unpaid"
+        with self.engine.begin() as conn:
+            conn.execute(
+                update(invoices).where(invoices.c.id == invoice_id)
+                .values(amount_paid=amount_paid, status=status)
+            )
+        return status
+
+    def cancel_invoice(self, invoice_id: int, reason: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                update(invoices).where(invoices.c.id == invoice_id)
+                .values(status="cancelled", cancel_reason=reason)
+            )
+
+    def set_waybill_date(self, invoice_id: int, on: dt.date) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(update(invoices).where(invoices.c.id == invoice_id).values(waybill_date=on.isoformat()))
+
+    # -- company details, logo and signature (editable by the admin) --------------
+    def company(self) -> dict:
+        saved = self.get_setting("company")
+        return json.loads(saved) if saved else {}
+
+    def set_company(self, details: dict) -> None:
+        self.set_setting("company", json.dumps(details))
+
+    def get_image(self, key: str) -> bytes | None:
+        value = self.get_setting(f"image_{key}")
+        return base64.b64decode(value) if value else None
+
+    def set_image(self, key: str, data: bytes | None) -> None:
+        if data is None:
+            with self.engine.begin() as conn:
+                conn.execute(delete(settings).where(settings.c.key == f"image_{key}"))
+        else:
+            self.set_setting(f"image_{key}", base64.b64encode(data).decode("ascii"))
+
     # -- saved items (catalog) -------------------------------------------------
     def catalog(self) -> list[dict]:
         with self.engine.connect() as conn:
@@ -666,8 +798,10 @@ class Store:
                 "activity": [_row(r) for r in conn.execute(select(activity).order_by(activity.c.id))],
                 "saved_items": self.catalog(),
                 "templates": self.list_templates(),
+                "invoices": [_row(r) for r in conn.execute(select(invoices).order_by(invoices.c.id))],
+                "company": self.company(),
             }
-        for q in data["quotations"]:
+        for q in data["quotations"] + data["invoices"]:
             q["data"] = json.loads(q["data"]) if q["data"] else None
         return data
 

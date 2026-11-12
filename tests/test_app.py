@@ -61,7 +61,8 @@ text(at, "Password").input("secret123")
 text(at, "Repeat password").input("secret123")
 button(at, "Create admin account").click().run()
 check(not at.exception and "user" in at.session_state, f"admin created and signed in {errors(at)}")
-check([t.label for t in at.tabs][:4] == ["New quotation", "All quotations", "Saved items", "Admin"], "admin sees 4 tabs")
+check([t.label for t in at.tabs][:5] == ["New quotation", "All quotations", "All invoices", "Saved items", "Admin"],
+      "admin sees 5 tabs")
 
 store = db.Store(os.environ["REHOBOTH_DATABASE_URL"])
 check(store.latest_template() is not None, "template.docx was stored in the database")
@@ -117,7 +118,7 @@ check(any("Choose your own password" in s.value for s in at3.subheader), "tempor
 text(at3, "New password").input("jadepass1")
 text(at3, "Repeat new password").input("jadepass1")
 button(at3, "Change password").click().run()
-check([t.label for t in at3.tabs][:3] == ["New quotation", "My quotations", "Saved items"] and len(at3.tabs) >= 3
+check([t.label for t in at3.tabs][:4] == ["New quotation", "My quotations", "My invoices", "Saved items"]
       and "Admin" not in [t.label for t in at3.tabs], "staff do not see the Admin tab")
 check(at3.session_state["quote_ref"].startswith("RSL/JA/"), "staff reference uses their initials")
 
@@ -301,6 +302,88 @@ boss.session_state["manage_user"] = "tunde"
 boss.session_state["main_tab"] = "Admin"  # the test harness does not remember the open tab
 boss.run()
 check(not boss.exception and any(b.label == "Delete account" for b in boss.button), "admin sees the Delete account button")
+
+# 12. invoices and waybills ------------------------------------------------------------
+import io  # noqa: E402
+
+import docx  # noqa: E402
+
+import invoice_engine as ie  # noqa: E402
+from views import invoices as invoice_views  # noqa: E402
+
+
+def invoice_form(quote_id: int):
+    """Runs just the 'Invoices for this quotation' section, signed in as mary."""
+    import streamlit as st
+
+    from views import common, invoices
+
+    st.session_state.setdefault("user", {"username": "mary", "full_name": "Mary Okon", "initials": "MJO",
+                                         "role": "admin", "must_change_password": False})
+    invoices.quote_section(common.get_store().get_quote(quote_id))
+
+
+def doc_text(data: bytes) -> str:
+    d = docx.Document(io.BytesIO(data))
+    return "\n".join(c.text for t in d.tables for r in t.rows for c in r.cells)
+
+
+draft_quote = next(q for q in store.list_quotes() if q["client_name"] == "Draft Client Ltd")
+form = AppTest.from_function(invoice_form, args=(draft_quote["id"],), default_timeout=60)
+form.run()
+check(not form.exception and any(b.label == "Generate invoice" for b in form.button),
+      f"a quotation offers 'Create invoice' {form.exception}")
+contract = 640_000 + 850_000  # 2 x 320k batteries + 850k inverter, no VAT on that quote
+form.session_state[f"inv_{draft_quote['id']}_mode"] = "Percentage"
+form.run()
+next(n for n in form.number_input if n.label.startswith("Percentage")).set_value(60.0)
+form.run()
+check(any("894,000.00" in str(m.value) for m in form.metric), "60% part payment shows ₦894,000.00 due")
+next(t for t in form.text_input if t.label == "LPO number").input("PO-123")
+button(form, "Generate invoice").click().run()
+first = store.list_invoices()[0]
+month = db.today().strftime("%Y/%m")
+check(first["number"] == f"RESYPL/{month}/001" and first["amount_due"] == 894_000 and first["contract_total"] == contract,
+      f"invoice saved with company number: {first['number']} {first['amount_due']}")
+check(any(b.label == "Download invoice" for b in form.get("download_button")), "invoice ready to download")
+first_text = doc_text(invoice_views.invoice_document(store.get_invoice(first["id"])))
+check("AMOUNT DUE (60% PART PAYMENT)" in first_text and "894,000.00" in first_text and "PO-123" in first_text
+      and "24280259-0001" in first_text and "1224641552" in first_text,
+      "invoice document has part payment, LPO, TIN and bank details")
+
+form2 = AppTest.from_function(invoice_form, args=(draft_quote["id"],), default_timeout=60)
+form2.run()
+check(any("596,000.00" in str(m.value) for m in form2.metric), "next invoice defaults to the balance ₦596,000.00")
+button(form2, "Generate invoice").click().run()
+second = store.list_invoices()[0]
+check(second["number"] == f"RESYPL/{month}/002" and second["amount_due"] == 596_000, "balance invoice gets the next number")
+check("LESS: PREVIOUSLY INVOICED" in doc_text(invoice_views.invoice_document(store.get_invoice(second["id"]))),
+      "balance invoice shows what was invoiced before")
+form3 = AppTest.from_function(invoice_form, args=(draft_quote["id"],), default_timeout=60)
+form3.run()
+check(any("Nothing left to invoice" in w.value for w in form3.warning)
+      and next(b for b in form3.button if b.label == "Generate invoice").disabled,
+      "once fully invoiced, no more invoices can be made for it")
+
+check(store.set_invoice_payment(first["id"], 400_000) == "part_paid", "recording part of the money -> Part paid")
+check(store.set_invoice_payment(first["id"], 894_000) == "paid", "recording all of it -> Paid")
+wb = invoice_views.waybill_document(store.get_invoice(first["id"]), db.today())
+wb_text = doc_text(wb)
+check("WAYBILL/DELIVERY" in wb_text and "Battery" in wb_text and "320,000" not in wb_text,
+      "waybill lists the items without prices")
+check(ie.words(851_400) == "EIGHT HUNDRED AND FIFTY ONE THOUSAND, FOUR HUNDRED NAIRA ONLY", "amount in words in capitals")
+
+boss = new_app()
+sign_in(boss, "mary", "secret123")
+boss.session_state["main_tab"] = "All invoices"
+boss.run()
+check(not boss.exception and any(m.label == "Invoiced" for m in boss.metric), f"admin Invoices tab renders {boss.exception}")
+boss.session_state["main_tab"] = "Admin"
+boss.run()
+check(not boss.exception and any("Invoiced per month" in m.value for m in boss.markdown),
+      f"admin sees money per month {boss.exception}")
+acts = [a["action"] for a in store.activity()]
+check("Created invoice" in acts, "invoice creation is in the activity log")
 
 print(f"\n{'All checks passed' if not failures else f'{len(failures)} check(s) failed'}")
 store.engine.dispose()

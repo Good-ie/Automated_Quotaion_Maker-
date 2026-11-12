@@ -9,7 +9,7 @@ from pathlib import Path
 import streamlit as st
 from sqlalchemy.exc import SQLAlchemyError
 
-from views import admin, auth, common, history, quote, saved_items
+from views import admin, auth, common, history, invoices, quote, saved_items
 
 st.set_page_config(
     page_title="Rehoboth Quotation Maker",
@@ -62,7 +62,12 @@ common.hero(
     "then download a client-ready Word quotation."
 )
 
-names = ["New quotation", "All quotations" if is_admin else "My quotations", "Saved items"]
+names = [
+    "New quotation",
+    "All quotations" if is_admin else "My quotations",
+    "All invoices" if is_admin else "My invoices",
+    "Saved items",
+]
 if is_admin:
     names.append("Admin")
 tabs = st.tabs(names, key="main_tab", on_change="rerun")
@@ -71,13 +76,7 @@ tabs = st.tabs(names, key="main_tab", on_change="rerun")
 # The other tabs only load from the database when they are opened.
 with tabs[0]:
     quote.render()
-with tabs[1]:
-    if tabs[1].open:
-        history.render()
-with tabs[2]:
-    if tabs[2].open:
-        saved_items.render()
-if is_admin:
-    with tabs[3]:
-        if tabs[3].open:
-            admin.render()
+for tab, screen in zip(tabs[1:], [history.render, invoices.render, saved_items.render, admin.render]):
+    with tab:
+        if tab.open:
+            screen()
