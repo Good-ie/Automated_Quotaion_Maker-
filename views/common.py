@@ -5,6 +5,7 @@ from pathlib import Path
 
 import streamlit as st
 
+import pdf_export
 import store as db
 
 
@@ -59,6 +60,29 @@ def setup_key() -> str | None:
 @st.cache_data(max_entries=4, show_spinner=False)
 def template_bytes(template_id: int) -> bytes | None:
     return get_store().template_bytes(template_id)
+
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@st.cache_data(max_entries=16, show_spinner=False)
+def to_pdf(word: bytes) -> bytes | None:
+    """PDF copy of a Word document (None where LibreOffice is not installed)."""
+    return pdf_export.docx_to_pdf(word)
+
+
+def download_buttons(word: bytes, pdf: bytes | None, file_name: str, key: str) -> None:
+    """'Download PDF' and 'Download Word' side by side."""
+    with st.container(horizontal=True, key=f"{key}_row"):
+        if pdf:
+            st.download_button("Download PDF", data=pdf, file_name=file_name.rsplit(".", 1)[0] + ".pdf",
+                               mime="application/pdf", icon=":material/picture_as_pdf:", type="primary",
+                               on_click="ignore", key=f"{key}_pdf")
+        st.download_button("Download Word", data=word, file_name=file_name, mime=DOCX_MIME,
+                           icon=":material/description:", on_click="ignore", key=key)
+    if pdf is None:
+        st.caption(":material/info: PDF is not available on this computer (it needs LibreOffice). "
+                   "The online app makes PDFs.")
 
 
 def user() -> dict:

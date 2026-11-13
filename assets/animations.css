@@ -100,7 +100,8 @@
   60%  { opacity: 1; transform: translateY(-3px) scale(1.02); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-.st-key-download button {
+.st-key-download button,
+.st-key-download_pdf button {
   animation: rq-arrive 0.55s ease-out both;
   border-color: var(--rq-green);
   color: var(--rq-green);

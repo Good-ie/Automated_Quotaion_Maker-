@@ -17,7 +17,6 @@ from views import common
 
 STATUS_LABELS = {"unpaid": "Unpaid", "part_paid": "Part paid", "paid": "Paid", "cancelled": "Cancelled"}
 LINE_COLUMNS = ["Model no.", "Qty", "Description", "Unit price (₦)"]
-DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 LOGO_FILE = Path(__file__).resolve().parent.parent / "assets" / "resypl_logo.png"
 
 
@@ -74,9 +73,8 @@ def quote_section(q: dict) -> None:
     just_made = st.session_state.get("new_invoice")
     if just_made and just_made["quote_id"] == q["id"]:
         st.success(f"Invoice **{just_made['number']}** saved.", icon=":material/check_circle:")
-        st.download_button("Download invoice", data=just_made["data"], file_name=just_made["file_name"],
-                           mime=DOCX, icon=":material/download:", on_click="ignore", type="primary",
-                           key=f"new_invoice_download_{q['id']}")
+        common.download_buttons(just_made["data"], just_made.get("pdf"), just_made["file_name"],
+                                f"new_invoice_download_{q['id']}")
         st.caption("For the waybill or to record payment, open the **Invoices** tab.")
 
     existing = store.invoices_for_quote(q["id"])
@@ -220,8 +218,9 @@ def _create_form(q: dict) -> None:
         common.log("Created invoice", f"{number} · {inv.client_name} · {common.naira(totals['due'])} ({kind}) "
                                       f"from {q['reference']}")
         record = store.get_invoice(new_id)
+        word = invoice_document(record)
         st.session_state.new_invoice = {
-            "quote_id": q["id"], "number": number, "data": invoice_document(record),
+            "quote_id": q["id"], "number": number, "data": word, "pdf": common.to_pdf(word),
             "file_name": _file_name("Invoice", record),
         }
         st.rerun()
@@ -326,10 +325,13 @@ def _detail(invoice_id: int, names: dict) -> None:
             st.markdown("**Invoice document**")
             ready = st.session_state.get("invoice_ready")
             if ready and ready["id"] == invoice_id:
-                st.download_button("Download invoice", data=ready["data"], file_name=ready["file_name"], mime=DOCX,
-                                   icon=":material/download:", on_click="ignore", key=f"{k}_dl")
-            elif st.button("Prepare invoice", icon=":material/description:", key=f"{k}_prep"):
-                st.session_state.invoice_ready = {"id": invoice_id, "data": invoice_document(rec),
+                common.download_buttons(ready["data"], ready.get("pdf"), ready["file_name"], f"{k}_dl")
+            elif st.button("Prepare invoice", icon=":material/description:", key=f"{k}_prep",
+                           help="Makes the invoice as PDF and Word."):
+                with st.spinner("Making the invoice…"):
+                    word = invoice_document(rec)
+                    pdf = common.to_pdf(word)
+                st.session_state.invoice_ready = {"id": invoice_id, "data": word, "pdf": pdf,
                                                   "file_name": _file_name("Invoice", rec)}
                 common.log("Downloaded invoice", f"{rec['number']} · {rec['client_name']}")
                 st.rerun()
@@ -339,12 +341,14 @@ def _detail(invoice_id: int, names: dict) -> None:
             on = st.date_input("Delivery date", value=default, format="DD/MM/YYYY", key=f"{k}_wb_date")
             ready = st.session_state.get("waybill_ready")
             if ready and ready["id"] == invoice_id and ready["date"] == on:
-                st.download_button("Download waybill", data=ready["data"], file_name=ready["file_name"], mime=DOCX,
-                                   icon=":material/download:", on_click="ignore", key=f"{k}_wb_dl")
-            elif st.button("Prepare waybill", icon=":material/local_shipping:", key=f"{k}_wb_prep"):
+                common.download_buttons(ready["data"], ready.get("pdf"), ready["file_name"], f"{k}_wb_dl")
+            elif st.button("Prepare waybill", icon=":material/local_shipping:", key=f"{k}_wb_prep",
+                           help="Makes the waybill as PDF and Word."):
                 store.set_waybill_date(invoice_id, on)
-                st.session_state.waybill_ready = {"id": invoice_id, "date": on,
-                                                  "data": waybill_document(rec, on),
+                with st.spinner("Making the waybill…"):
+                    word = waybill_document(rec, on)
+                    pdf = common.to_pdf(word)
+                st.session_state.waybill_ready = {"id": invoice_id, "date": on, "data": word, "pdf": pdf,
                                                   "file_name": _file_name("Waybill", rec)}
                 common.log("Made waybill", f"{rec['number']} · {rec['client_name']} · delivered {on:%d %b %Y}")
                 st.rerun()

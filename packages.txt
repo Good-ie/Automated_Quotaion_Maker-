@@ -1,0 +1,3 @@
+libreoffice-writer-nogui
+fonts-crosextra-carlito
+fonts-liberation

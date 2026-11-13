@@ -122,16 +122,9 @@ def _detail(quote_id: int, names: dict) -> None:
 
             prepared = st.session_state.get("past_doc")
             if prepared and prepared["id"] == quote_id:
-                st.download_button(
-                    "Download Word document",
-                    data=prepared["data"],
-                    file_name=prepared["file_name"],
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    icon=":material/download:",
-                    on_click="ignore",
-                    key="past_download",
-                )
-            elif st.button("Prepare Word document", icon=":material/description:", key=f"prepare_{quote_id}"):
+                common.download_buttons(prepared["data"], prepared.get("pdf"), prepared["file_name"], "past_download")
+            elif st.button("Prepare documents", icon=":material/description:", key=f"prepare_{quote_id}",
+                           help="Makes the quotation again exactly as it was sent, as PDF and Word."):
                 _prepare(q)
                 st.rerun()
 
@@ -161,11 +154,13 @@ def _prepare(q: dict) -> None:
             return
         data = common.template_bytes(latest["id"])
         note = " (original template missing, used current one)"
-    with st.spinner("Rebuilding the document…"):
+    with st.spinner("Rebuilding the document (PDF and Word)…"):
         doc, _ = qe.rebuild_quotation(data, q["data"])
+        pdf = common.to_pdf(doc)
     st.session_state.past_doc = {
         "id": q["id"],
         "data": doc,
+        "pdf": pdf,
         "file_name": f"Quotation_{qe.safe_filename(q['client_name'])}_{qe.safe_filename(q['reference'])}"
         + (f"_rev{q['revision']}" if q["revision"] > 1 else "") + ".docx",
     }

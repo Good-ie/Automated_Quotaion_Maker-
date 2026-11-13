@@ -406,15 +406,7 @@ def render() -> None:
         if generated["fingerprint"] == fingerprint:
             saved_as = generated["reference"] + (f" (revision {generated['revision']})" if generated["revision"] > 1 else "")
             st.caption(f":green[:material/cloud_done:] Saved to history as **{saved_as}**.")
-            st.download_button(
-                "Download Word document",
-                data=generated["data"],
-                file_name=generated["file_name"],
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                icon=":material/download:",
-                on_click="ignore",
-                key="download",
-            )
+            common.download_buttons(generated["data"], generated.get("pdf"), generated["file_name"], "download")
         else:
             st.caption(
                 ":material/sync_problem: You changed something since the last document was "
@@ -464,11 +456,14 @@ def _generate(store, user, template, header, options, option_rows, pricing, fing
                 icon=":material/cloud_off:",
             )
             return
+        st.write(":material/picture_as_pdf: Making the PDF copy")
+        pdf = common.to_pdf(data)
         progress.update(label="Quotation ready", state="complete", expanded=False)
     st.session_state.draft_saved_json = draft_json
     st.session_state.generated = {
         "fingerprint": fingerprint,
         "data": data,
+        "pdf": pdf,
         "file_name": f"Quotation_{qe.safe_filename(header['client_name'])}_{qe.safe_filename(ref)}"
         + (f"_rev{revision}" if revision > 1 else "") + ".docx",
         "warnings": warnings,

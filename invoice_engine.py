@@ -158,6 +158,29 @@ def format_date(d: dt.date) -> str:
 # ---------------------------------------------------------------------------
 # Word helpers
 # ---------------------------------------------------------------------------
+# Word files must list table settings in a fixed order. Word forgives mistakes;
+# LibreOffice (used to make PDFs) does not, so insert each setting in its place.
+_TBL_PR_ORDER = ["tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize", "tblStyleColBandSize",
+                 "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar",
+                 "tblLook", "tblCaption", "tblDescription"]
+_TC_PR_ORDER = ["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar",
+                "textDirection", "tcFitText", "vAlign", "hideMark"]
+
+
+def _put(parent, child, order: list[str]) -> None:
+    """Insert child into parent in schema order, replacing an existing one of the same kind."""
+    name = child.tag.split("}")[1]
+    for old in parent.findall(qn(f"w:{name}")):
+        parent.remove(old)
+    position = order.index(name)
+    for i, existing in enumerate(list(parent)):
+        tag = existing.tag.split("}")[1]
+        if tag in order and order.index(tag) > position:
+            existing.addprevious(child)
+            return
+    parent.append(child)
+
+
 def _borders(table, outer: int = 12, inner: int = 4, color: str = "000000") -> None:
     tbl_pr = table._tbl.tblPr
     for old in tbl_pr.findall(qn("w:tblBorders")):
@@ -171,22 +194,45 @@ def _borders(table, outer: int = 12, inner: int = 4, color: str = "000000") -> N
         el.set(qn("w:space"), "0")
         el.set(qn("w:color"), color)
         borders.append(el)
-    tbl_pr.append(borders)
+    _put(tbl_pr, borders, _TBL_PR_ORDER)
 
 
-def _cell_border(cell, **edges) -> None:
-    """Override single cell edges, e.g. _cell_border(c, top=0) removes the top line."""
-    tc_pr = cell._tc.get_or_add_tcPr()
-    borders = tc_pr.find(qn("w:tcBorders"))
-    if borders is None:
-        borders = OxmlElement("w:tcBorders")
-        tc_pr.append(borders)
-    for edge, size in edges.items():
-        el = OxmlElement(f"w:{edge}")
-        el.set(qn("w:val"), "single" if size else "nil")
-        el.set(qn("w:sz"), str(size))
-        el.set(qn("w:color"), "000000")
-        borders.append(el)
+def _cell_lines(document) -> None:
+    """Copy each table's border settings onto its cells.
+
+    LibreOffice (used to make the PDFs) ignores borders set only on the whole table, so
+    every cell gets its own top/left/bottom/right lines: thick on the table's outside,
+    thin (or none) inside, exactly as the table settings say.
+    """
+    for tbl in document.element.body.iter(qn("w:tbl")):
+        tbl_borders = tbl.tblPr.find(qn("w:tblBorders"))
+        if tbl_borders is None:
+            continue
+        spec = {el.tag.split("}")[1]: (el.get(qn("w:val")), el.get(qn("w:sz"))) for el in tbl_borders}
+        n_cols = len(tbl.tblGrid.findall(qn("w:gridCol")))
+        rows = tbl.findall(qn("w:tr"))
+        for r, tr in enumerate(rows):
+            col = 0
+            for tc in tr.findall(qn("w:tc")):
+                tc_pr = tc.get_or_add_tcPr()
+                span_el = tc_pr.find(qn("w:gridSpan"))
+                span = int(span_el.get(qn("w:val"))) if span_el is not None else 1
+                edges = {
+                    "top": spec["top"] if r == 0 else spec["insideH"],
+                    "left": spec["left"] if col == 0 else spec["insideV"],
+                    "bottom": spec["bottom"] if r == len(rows) - 1 else spec["insideH"],
+                    "right": spec["right"] if col + span >= n_cols else spec["insideV"],
+                }
+                borders = OxmlElement("w:tcBorders")
+                for edge, (val, size) in edges.items():
+                    el = OxmlElement(f"w:{edge}")
+                    el.set(qn("w:val"), val)
+                    el.set(qn("w:sz"), size)
+                    el.set(qn("w:space"), "0")
+                    el.set(qn("w:color"), "000000")
+                    borders.append(el)
+                _put(tc_pr, borders, _TC_PR_ORDER)
+                col += span
 
 
 def _fill(cell, hex_color: str) -> None:
@@ -195,7 +241,7 @@ def _fill(cell, hex_color: str) -> None:
     shd.set(qn("w:val"), "clear")
     shd.set(qn("w:color"), "auto")
     shd.set(qn("w:fill"), hex_color)
-    tc_pr.append(shd)
+    _put(tc_pr, shd, _TC_PR_ORDER)
 
 
 def _widths(table, twips: list[int]) -> None:
@@ -203,7 +249,7 @@ def _widths(table, twips: list[int]) -> None:
     tbl_pr = table._tbl.tblPr
     layout = OxmlElement("w:tblLayout")
     layout.set(qn("w:type"), "fixed")
-    tbl_pr.append(layout)
+    _put(tbl_pr, layout, _TBL_PR_ORDER)
     grid = table._tbl.tblGrid
     for col, width in zip(grid.findall(qn("w:gridCol")), twips):
         col.set(qn("w:w"), str(width))
@@ -425,6 +471,7 @@ def build_invoice(inv: Invoice, company: dict | None = None, logo: bytes | None 
         _total_row(t, "BALANCE REMAINING AFTER THIS INVOICE", totals["balance"], bold=False)
 
     _footer_signatures(document, company, signature, bank=True)
+    _cell_lines(document)
     bio = BytesIO()
     document.save(bio)
     return bio.getvalue()
@@ -458,6 +505,7 @@ def build_waybill(inv: Invoice, delivery_date: dt.date, company: dict | None = N
         _row_height(t.add_row(), 290)
 
     _footer_signatures(document, company, signature, bank=False)
+    _cell_lines(document)
     bio = BytesIO()
     document.save(bio)
     return bio.getvalue()

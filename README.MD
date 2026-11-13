@@ -61,6 +61,11 @@ Word template. Nothing is lost when the app restarts. Total cost: ₦0.
 * In **My invoices**: download any invoice again, make its **waybill / delivery note** (no prices, space for the client's stamp), and record money received (**Unpaid / Part paid / Paid**, overdue shown from the due date).
 * **Admin › Money per month:** invoiced, received and outstanding per month, per staff member this month, and overdue invoices. **Admin › Company details:** TIN, bank details, address, logo and signature printed on invoices.
 
+### 📄 PDF and Word
+Every quotation, invoice and waybill can be downloaded as **PDF** or **Word**. PDFs are made with
+LibreOffice (free), which Streamlit Cloud installs from `packages.txt`. On a PC without LibreOffice
+the app offers the Word file only.
+
 ### 🚀 Running it on your own PC (for testing)
 ```bash
 pip install -r requirements.txt

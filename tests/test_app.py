@@ -70,6 +70,9 @@ base = len(store.list_quotes())  # old quotes_history.json records are imported 
 print(f"     ({base} old record(s) imported, {len(store.catalog())} saved item(s))")
 
 # 2. generate a quotation ---------------------------------------------------------
+import pdf_export  # noqa: E402
+
+pdf_export.docx_to_pdf = lambda data, timeout=180: b"%PDF-1.4 test copy"
 check(at.session_state["quote_ref"].startswith("RSL/MJO/"), f"reference uses initials: {at.session_state['quote_ref']}")
 first_ref = at.session_state["quote_ref"]
 text(at, "Client name").input("Pladis Foods Nigeria")
@@ -82,7 +85,8 @@ saved = store.list_quotes()
 saved = [q for q in saved if q["status"] != "legacy"]
 check(len(saved) == 1 and saved[0]["reference"] == first_ref and saved[0]["grand_total"] == 750000,
       f"quotation saved: {[(q['reference'], q['grand_total']) for q in saved]}")
-check(any(b.label == "Download Word document" for b in at.get("download_button")), "download button shown")
+labels = [b.label for b in at.get("download_button")]
+check("Download Word" in labels and "Download PDF" in labels, f"PDF and Word download buttons shown: {labels}")
 
 # 3. same reference for a different client is refused (the old overwrite bug) ----------
 text(at, "Client name").input("Plaudis Food")
@@ -345,7 +349,7 @@ first = store.list_invoices()[0]
 month = db.today().strftime("%Y/%m")
 check(first["number"] == f"RESYPL/{month}/001" and first["amount_due"] == 894_000 and first["contract_total"] == contract,
       f"invoice saved with company number: {first['number']} {first['amount_due']}")
-check(any(b.label == "Download invoice" for b in form.get("download_button")), "invoice ready to download")
+check({"Download PDF", "Download Word"} <= {b.label for b in form.get("download_button")}, "invoice ready as PDF and Word")
 first_text = doc_text(invoice_views.invoice_document(store.get_invoice(first["id"])))
 check("AMOUNT DUE (60% PART PAYMENT)" in first_text and "894,000.00" in first_text and "PO-123" in first_text
       and "24280259-0001" in first_text and "1224641552" in first_text,
