@@ -409,6 +409,7 @@ maker.run()
 direct_total = (2 * 187_000 + 4 * 19_800) * 1.075  # 453,200 + 7.5% VAT
 check(any(f"{direct_total:,.2f}" in str(m.value) for m in maker.metric), f"direct invoice total ₦{direct_total:,.2f}")
 maker.session_state["direct_inv_mode"] = "Percentage"
+maker.session_state["direct_inv_terms_kind"] = "Percentage"  # payment terms as a percentage
 maker.run()
 next(n for n in maker.number_input if n.key == "direct_inv_pct").set_value(50.0)
 maker.run()
@@ -420,6 +421,9 @@ check(direct["quote_id"] is None and direct["job_id"] == direct["id"] and direct
 check(not maker.session_state["direct_inv_client"] if "direct_inv_client" in maker.session_state else True,
       "the form is emptied after generating, so it is not made twice")
 check(store.invoiced_for_job(direct["id"]) == round(direct_total / 2, 2), "the job remembers what was invoiced")
+direct_terms = store.get_invoice(direct["id"])["data"]["invoice"]["terms"]
+check(direct_terms == "70% with order, 30% after delivery" and direct["due_date"] == direct["invoice_date"],
+      f"payment terms as a percentage are printed and due straight away: {direct_terms!r}")
 
 
 def invoice_detail(invoice_id: int):
@@ -446,6 +450,9 @@ check(rest["job_id"] == direct["id"] and round(rest["amount_due"], 2) == round(d
 # 14. waybill without an invoice ---------------------------------------------------------
 widgets = {w.key: w for w in maker.text_input}
 widgets["direct_wb_client"].input("Arkseco Nig. Ltd")
+maker.session_state["direct_wb_terms_kind"] = "Words"
+maker.run()
+next(t for t in maker.text_input if t.key == "direct_wb_terms_text").input("Cash on delivery")
 next(t for t in maker.text_area if t.key == "direct_wb_raw").input("2 x Cat 6 Network Cable\n4 pcs 25mm PVC Flex Pipes")
 maker.run()
 next(b for b in maker.button if b.key == "direct_wb_go").click().run()
@@ -453,6 +460,7 @@ waybill = store.list_waybills()[0] if store.list_waybills() else None
 check(waybill is not None and waybill["invoice_number"] == "" and waybill["items_count"] == 2,
       f"waybill saved without an invoice number: {waybill}")
 wb_doc = doc_text(invoice_views.waybill_document_from(store.get_waybill(waybill["id"])["data"], db.today()))
+check("Cash on delivery" in wb_doc, "payment terms written in words appear on the waybill")
 check("WAYBILL/DELIVERY" in wb_doc and "Arkseco Nig. Ltd" in wb_doc and "Cat 6 Network Cable" in wb_doc
       and "187,000" not in wb_doc, "stand-alone waybill document has client and items, no prices")
 check({"Download PDF", "Download Word"} <= {b.label for b in maker.get("download_button")},

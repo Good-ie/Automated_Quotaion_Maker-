@@ -357,7 +357,8 @@ def _details(document, title: str, date_label: str, inv: Invoice, company: dict)
         if r == 0:
             _write(title_cell, title, bold=True, size=13, align="center")
         _write(row.cells[2], label, bold=True, size=9, align="right")
-        _write(row.cells[3], value, size=9, align="right")
+        # long payment terms ("70% with order, 30% after delivery") get a smaller size to fit the box
+        _write(row.cells[3], value, size=9 if len(value) <= 24 else 7.5 if len(value) <= 48 else 6.5, align="right")
 
     for i in range(body_rows):
         row = t.rows[2 + i]

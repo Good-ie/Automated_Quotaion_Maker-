@@ -5,6 +5,7 @@ All staff can create them; the admin sees every invoice and the monthly figures.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -53,8 +54,10 @@ def invoice_document(record: dict) -> bytes:
     return ie.build_invoice(inv, record["data"]["company"], logo_bytes(), signature_bytes())
 
 
-def waybill_document(record: dict, delivery_date: dt.date) -> bytes:
+def waybill_document(record: dict, delivery_date: dt.date, terms: str | None = None) -> bytes:
     inv = ie.Invoice.from_dict(record["data"]["invoice"])
+    if terms is not None:
+        inv.terms = terms
     return ie.build_waybill(inv, delivery_date, record["data"]["company"], logo_bytes(), signature_bytes())
 
 
@@ -132,6 +135,50 @@ def direct_invoice() -> None:
     invoice_form(origin, blank, already=0.0, direct=True)
 
 
+_DAYS_TERMS = re.compile(r"\s*(\d{1,3})\s*days?(?:\s*net)?\s*", re.IGNORECASE)
+
+
+def terms_input(k: str, current: str = "45 Days Net", *, optional: bool = False) -> tuple[str, int]:
+    """Payment terms written as days, a percentage, or in words.
+
+    Returns (text printed on the document, days until the invoice is due).
+    """
+    days_match = _DAYS_TERMS.fullmatch(current or "")
+    choices = (["None"] if optional else []) + ["Days", "Percentage", "Words"]
+    default = "Days" if days_match else "Words" if current else ("None" if optional else "Days")
+    st.markdown("**Payment terms**")
+    kind = st.segmented_control("Payment terms", choices, default=default, key=f"{k}_terms_kind",
+                                label_visibility="collapsed") or default
+    due = 0
+    if kind == "None":
+        return "", 0
+    if kind == "Days":
+        due = int(st.number_input("Number of days", min_value=0, max_value=365,
+                                  value=int(days_match.group(1)) if days_match else 45, step=5, key=f"{k}_days"))
+        terms = f"{due} Days Net"
+    elif kind == "Percentage":
+        c1, c2 = st.columns(2)
+        pct = c1.number_input("Paid with order (%)", min_value=0.0, max_value=100.0, value=70.0, step=5.0,
+                              key=f"{k}_terms_pct")
+        rest = c2.text_input("The balance is paid", value="after delivery", key=f"{k}_terms_rest",
+                             help="e.g. 'after delivery', 'within 30 days', 'on completion'")
+        if pct >= 100:
+            terms = "100% with order"
+        else:
+            terms = f"{pct:g}% with order, {100 - pct:g}% {rest.strip()}".strip()
+    else:
+        terms = st.text_input("Payment terms (in words)", value=current if not days_match else "",
+                              placeholder="e.g. Cash on delivery, or 50% with LPO and balance in 2 weeks",
+                              key=f"{k}_terms_text").strip()
+    if kind != "Days" and not optional:
+        due = int(st.number_input("Due in (days)", min_value=0, max_value=365, value=0 if kind == "Percentage" else 30,
+                                  step=5, key=f"{k}_due",
+                                  help="Used only to track payment and show overdue invoices. Not printed."))
+    if terms:
+        st.caption(f"Printed as: **{terms}**")
+    return terms, due
+
+
 def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = None, option_index: int = 0,
                  job_id: int | None = None, direct: bool = False, items_key: str | None = None) -> None:
     store = common.get_store()
@@ -144,19 +191,18 @@ def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = 
         client_address = st.text_area("Client address", key=f"{k}_addr", height=80)
     c1, c2, c3 = st.columns(3)
     inv_date = c1.date_input("Invoice date", value=db.today(), format="DD/MM/YYYY", key=f"{k}_date")
-    days = c2.number_input("Payment terms (days)", min_value=0, max_value=365, value=45, step=5, key=f"{k}_days",
-                           help="Printed as e.g. '45 Days Net'. The due date is worked out from it.")
-    lpo_number = c3.text_input("LPO number", value=prefill.get("lpo_number", ""), placeholder="e.g. PO-16967-01",
+    lpo_number = c2.text_input("LPO number", value=prefill.get("lpo_number", ""), placeholder="e.g. PO-16967-01",
                                key=f"{k}_lpo")
-    c1, c2 = st.columns(2)
-    lpo_date = c1.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date",
+    lpo_date = c3.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date",
                              help="Leave empty if there is no LPO." if not prefill.get("lpo_date") else
                              f"Previous invoice: {prefill['lpo_date']}")
     if not direct:
+        c1, c2 = st.columns([2, 1])
+        client_name = c1.text_input("Client", value=prefill["client_name"], key=f"{k}_client")
         attention = c2.text_input("Attention (ATTN TO)", value=prefill.get("attention", ""), key=f"{k}_attn")
-        client_name = st.text_input("Client", value=prefill["client_name"], key=f"{k}_client")
         client_address = st.text_area("Client address", value=prefill.get("client_address", ""), height=80,
                                       key=f"{k}_addr")
+    terms, days = terms_input(k, prefill.get("terms", "45 Days Net"))
 
     markup = 0.0
     if direct:
@@ -199,7 +245,7 @@ def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = 
     lines = [ie.InvoiceLine(r["model"], r["qty"], r["desc"], round(r["unit"] * (1 + markup / 100), 2))
              for r in rows]
     inv = ie.Invoice(
-        number="", date=inv_date, terms=f"{int(days)} Days Net", lpo_number=lpo_number.strip(),
+        number="", date=inv_date, terms=terms, lpo_number=lpo_number.strip(),
         lpo_date=ie.format_date(lpo_date) if lpo_date else prefill.get("lpo_date", ""),
         attention=attention.strip(), client_name=client_name.strip(), client_address=client_address.strip(),
         lines=lines, discount_pct=discount, extra_discount=extra_discount, vat_enabled=vat_on, vat_pct=vat_pct,
@@ -286,10 +332,9 @@ def direct_waybill() -> None:
     on = c1.date_input("Delivery date", value=db.today(), format="DD/MM/YYYY", key=f"{k}_date")
     invoice_number = c2.text_input("Invoice number", key=f"{k}_number", placeholder="Optional",
                                    help="Type the invoice number if there is one; leave empty if not.")
-    terms = c3.text_input("Payment terms", key=f"{k}_terms", placeholder="Optional, e.g. 45 Days Net")
-    c1, c2 = st.columns(2)
-    lpo_number = c1.text_input("LPO number", key=f"{k}_lpo", placeholder="Optional")
-    lpo_date = c2.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date")
+    lpo_number = c3.text_input("LPO number", key=f"{k}_lpo", placeholder="Optional")
+    lpo_date = st.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date")
+    terms, _ = terms_input(k, "", optional=True)
 
     st.markdown("**Items**: paste the list, add a file (PDF, Word, Excel, picture), or type in the table. Prices are not printed.")
     raw = items.text_and_pictures(f"{k}_raw", "e.g.\n2 x Cat 6 Network Cable\n4 pcs 25mm PVC Flex Pipes")
@@ -450,16 +495,19 @@ def _detail(invoice_id: int, names: dict) -> None:
             st.markdown("**Waybill / delivery note**")
             default = dt.date.fromisoformat(rec["waybill_date"]) if rec["waybill_date"] else db.today()
             on = st.date_input("Delivery date", value=default, format="DD/MM/YYYY", key=f"{k}_wb_date")
+            wb_terms = st.text_input("Payment terms on the waybill", value=inv.terms, key=f"{k}_wb_terms",
+                                     help="Starts with the invoice's terms. Change the words if needed, or clear it.")
             ready = st.session_state.get("waybill_ready")
-            if ready and ready["id"] == invoice_id and ready["date"] == on:
+            if ready and ready["id"] == invoice_id and ready["date"] == on and ready.get("terms") == wb_terms:
                 common.download_buttons(ready["data"], ready.get("pdf"), ready["file_name"], f"{k}_wb_dl")
             elif st.button("Prepare waybill", icon=":material/local_shipping:", key=f"{k}_wb_prep",
                            help="Makes the waybill as PDF and Word."):
                 store.set_waybill_date(invoice_id, on)
                 with st.spinner("Making the waybill…"):
-                    word = waybill_document(rec, on)
+                    word = waybill_document(rec, on, wb_terms.strip())
                     pdf = common.to_pdf(word)
-                st.session_state.waybill_ready = {"id": invoice_id, "date": on, "data": word, "pdf": pdf,
+                st.session_state.waybill_ready = {"id": invoice_id, "date": on, "terms": wb_terms, "data": word,
+                                                  "pdf": pdf,
                                                   "file_name": _file_name("Waybill", rec)}
                 common.log("Made waybill", f"{rec['number']} · {rec['client_name']} · delivered {on:%d %b %Y}")
                 st.rerun()
@@ -493,6 +541,7 @@ def _detail(invoice_id: int, names: dict) -> None:
                     prefill = {
                         "client_name": inv.client_name, "client_address": inv.client_address,
                         "attention": inv.attention, "lpo_number": inv.lpo_number, "lpo_date": inv.lpo_date,
+                        "terms": inv.terms,
                         "lines": [{"model": ln.model, "qty": ln.qty, "desc": ln.desc, "unit": ln.unit}
                                   for ln in inv.lines],
                         "discount_pct": inv.discount_pct, "extra_discount": inv.extra_discount,
