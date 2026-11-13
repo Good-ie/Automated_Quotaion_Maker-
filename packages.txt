@@ -1,3 +1,5 @@
 libreoffice-writer-nogui
 fonts-crosextra-carlito
 fonts-liberation
+tesseract-ocr
+tesseract-ocr-eng

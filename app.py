@@ -58,12 +58,12 @@ if st.session_state.user["must_change_password"]:
 auth.sidebar_account(store)
 is_admin = common.is_admin()
 common.hero(
-    "Rehoboth Systems & Project Limited · Paste the item list from WhatsApp, review it, "
-    "then download a client-ready Word quotation."
+    "Rehoboth Systems & Project Limited · Quotations, invoices and waybills from pasted text or pictures, "
+    "ready as PDF or Word."
 )
 
 names = [
-    "New quotation",
+    "New document",
     "All quotations" if is_admin else "My quotations",
     "All invoices" if is_admin else "My invoices",
     "Saved items",
@@ -72,10 +72,19 @@ if is_admin:
     names.append("Admin")
 tabs = st.tabs(names, key="main_tab", on_change="rerun")
 
-# The quotation being prepared always stays live, so switching tabs never loses work.
+# Work in progress always stays live, so switching tabs never loses it.
 # The other tabs only load from the database when they are opened.
 with tabs[0]:
-    quote.render()
+    make_quote, make_invoice, make_waybill = st.tabs(
+        [":material/request_quote: Quotation", ":material/receipt_long: Invoice", ":material/local_shipping: Waybill"],
+        key="make_kind",
+    )
+    with make_quote:
+        quote.render()
+    with make_invoice:
+        invoices.direct_invoice()
+    with make_waybill:
+        invoices.direct_waybill()
 for tab, screen in zip(tabs[1:], [history.render, invoices.render, saved_items.render, admin.render]):
     with tab:
         if tab.open:

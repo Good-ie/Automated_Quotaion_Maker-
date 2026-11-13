@@ -55,6 +55,13 @@ _CHATTER = re.compile(
     r"kindly|pls|please|prepare|quotation|quote|send|attached|below|following)\b",
     re.IGNORECASE,
 )
+# words that only appear in a table's header row
+_HEADER_WORDS = {
+    "s", "n", "sn", "no", "item", "items", "code", "codes", "model", "models", "number", "numbers", "part",
+    "description", "descriptions", "desc", "product", "products", "qty", "quantity", "quantities", "unit",
+    "units", "price", "prices", "cost", "costs", "rate", "total", "amount", "amounts", "availability",
+    "availabilities", "ngn", "naira", "remark", "remarks", "uom",
+}
 _FILLER_START = re.compile(
     r"^(?:(?:pls|please|kindly)\s+)?(?:(?:we|i|they|client)\s+)?(?:need|needs|want|wants|require|requires|"
     r"supply\s+of|supply)\s+(?:of\s+)?",
@@ -169,8 +176,13 @@ def _find_prices(line: str, protected: list[tuple[int, int]]):
         after = line[m.end():]
         if re.match(rf"\s*(?:{UNIT_WORDS})\b", after, re.I):
             continue  # "16 pcs" is a quantity
-        if re.search(r"\bx\s*$", before, re.I):
-            continue  # "x 16" is a quantity
+        qty_times = None
+        if re.search(r"(?:\bx|[×*])\s*$", before, re.I):
+            # "2 x 187,000" is 2 at 187,000 each; but "x 16" alone is a quantity
+            qty_times = re.search(r"(?:^|\s)(\d{1,4})\s*(?:x|×|\*)\s*$", before, re.I)
+            money_like = bool(m.group("cur") or m.group("suf")) or "," in m.group("num") or _money_value(m) >= 1000
+            if not (qty_times and money_like):
+                continue
         if re.search(r"\b(?:qty|quantity)\s*[:=]?\s*$", before, re.I):
             continue
         num_txt = m.group("num")
@@ -206,6 +218,9 @@ def _find_prices(line: str, protected: list[tuple[int, int]]):
             kind = "unit"
         elif _TOTAL_BEFORE.search(before):
             kind = "total"
+        if qty_times:
+            kind = "unit"
+            found.append((int(qty_times.group(1)), "qty", (qty_times.start(1), start)))
         found.append((value, kind, full_span))
     return found
 
@@ -468,14 +483,15 @@ def parse_line(raw: str, default_availability: str, sug: Suggestions) -> dict | 
     # Prices
     found = _find_prices(line, protected)
     unit, total = _choose_prices(found)
-    qty_after_price = None
+    qty_after_price = next((f[0] for f in found if f[1] == "qty"), None)  # "2 x 187,000"
     if found:
-        # "Battery 200AH #320,000 16": a bare number right after the price is the quantity
-        last_end = max(f[2][1] for f in found)
-        m = re.match(rf"\s*(?:x\s*)?(\d{{1,5}})\s*(?:(?:{UNIT_WORDS})\.?)?\s*$", line[last_end:], re.I)
-        if m and not _overlaps((last_end + m.start(1), last_end + m.end(1)), protected):
-            qty_after_price = int(m.group(1))
-            found.append((0, "qty", (last_end, len(line))))
+        if qty_after_price is None:
+            # "Battery 200AH #320,000 16": a bare number right after the price is the quantity
+            last_end = max(f[2][1] for f in found)
+            m = re.match(rf"\s*(?:x\s*)?(\d{{1,5}})\s*(?:(?:{UNIT_WORDS})\.?)?\s*$", line[last_end:], re.I)
+            if m and not _overlaps((last_end + m.start(1), last_end + m.end(1)), protected):
+                qty_after_price = int(m.group(1))
+                found.append((0, "qty", (last_end, len(line))))
         line = _cut(line, [f[2] for f in found])
         protected = [m.span() for m in _SPEC.finditer(line)] + [m.span() for m in _LENGTH.finditer(line)]
 
@@ -483,6 +499,9 @@ def parse_line(raw: str, default_availability: str, sug: Suggestions) -> dict | 
         letters_only = re.sub(r"[^A-Za-z ]", "", line).strip()
         if not letters_only or _CHATTER.search(line) or instruction_spans:
             return None  # greetings, "pls prepare quotation", "markup 15%" on its own line
+        words = re.findall(r"[a-z]+", line.lower())
+        if words and all(w in _HEADER_WORDS for w in words):
+            return None  # a table's header row, e.g. "Item Code | Description | Qty | Unit Price"
 
     line = _FILLER_START.sub("", line).strip()
 

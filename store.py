@@ -37,6 +37,7 @@ from sqlalchemy import (
     delete,
     func,
     insert,
+    inspect,
     select,
     update,
 )
@@ -189,7 +190,22 @@ invoices = Table(
     Column("status", String(12), nullable=False, default="unpaid"),  # unpaid / part_paid / paid / cancelled
     Column("cancel_reason", Text),
     Column("waybill_date", String(10)),
+    # invoices made without a quotation: the first invoice of the job (for the next part / balance)
+    Column("job_id", Integer, index=True),
     Column("data", Text, nullable=False),  # everything needed to rebuild the documents
+)
+
+waybills = Table(  # waybills made without an invoice
+    "rq_waybills",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("created_at", DateTime, nullable=False, index=True),
+    Column("username", String(40), nullable=False, index=True),
+    Column("client_name", String(200), nullable=False),
+    Column("invoice_number", String(60), nullable=False, default=""),
+    Column("delivery_date", String(10), nullable=False),
+    Column("items_count", Integer, nullable=False, default=0),
+    Column("data", Text, nullable=False),
 )
 
 _CATALOG_FIELDS = ["description", "model", "unit_cost", "availability", "last_quoted", "times_quoted"]
@@ -263,8 +279,16 @@ class Store:
         self.engine: Engine = create_engine(url, **options)
         self.is_cloud = not is_sqlite
         metadata.create_all(self.engine)
+        self._add_new_columns()
         if self.is_cloud:
             self._lock_public_api()
+
+    def _add_new_columns(self) -> None:
+        """Tables created by an older version of the app get the columns added since."""
+        existing = {c["name"] for c in inspect(self.engine).get_columns("rq_invoices")}
+        with self.engine.begin() as conn:
+            if "job_id" not in existing:
+                conn.exec_driver_sql("ALTER TABLE rq_invoices ADD COLUMN job_id INTEGER")
 
     def _lock_public_api(self) -> None:
         """Supabase also exposes tables through its web API. Turning on row level
@@ -653,6 +677,9 @@ class Store:
                             data=json.dumps(data_for_number(number), default=str), **values,
                         )
                     ).inserted_primary_key[0]
+                    if values.get("quote_id") is None and values.get("job_id") is None:
+                        # a new job without a quotation: it is its own first invoice
+                        conn.execute(update(invoices).where(invoices.c.id == new_id).values(job_id=new_id))
                 return new_id, number
             except IntegrityError:
                 continue
@@ -673,6 +700,44 @@ class Store:
         ).order_by(invoices.c.id)
         with self.engine.connect() as conn:
             return [_row(r) for r in conn.execute(q)]
+
+    def invoiced_for_job(self, job_id: int) -> float:
+        """Total already invoiced (not cancelled) for a job that has no quotation."""
+        with self.engine.connect() as conn:
+            total = conn.execute(
+                select(func.sum(invoices.c.amount_due)).where(
+                    invoices.c.job_id == job_id, invoices.c.status != "cancelled",
+                )
+            ).scalar()
+        return round(total or 0.0, 2)
+
+    # -- waybills made without an invoice -----------------------------------------------
+    def save_waybill(self, *, username: str, client_name: str, invoice_number: str, delivery_date: dt.date,
+                     items_count: int, data: dict) -> int:
+        with self.engine.begin() as conn:
+            return conn.execute(
+                insert(waybills).values(
+                    created_at=now(), username=username, client_name=client_name,
+                    invoice_number=invoice_number, delivery_date=delivery_date.isoformat(),
+                    items_count=items_count, data=json.dumps(data, default=str),
+                )
+            ).inserted_primary_key[0]
+
+    def list_waybills(self, username: str | None = None) -> list[dict]:
+        q = select(*[c for c in waybills.c if c.name != "data"]).order_by(waybills.c.id.desc())
+        if username:
+            q = q.where(waybills.c.username == username)
+        with self.engine.connect() as conn:
+            return [_row(r) for r in conn.execute(q)]
+
+    def get_waybill(self, waybill_id: int) -> dict | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(select(waybills).where(waybills.c.id == waybill_id)).first()
+        if not r:
+            return None
+        out = _row(r)
+        out["data"] = json.loads(out["data"])
+        return out
 
     def invoiced_so_far(self, quote_id: int, option_index: int) -> float:
         """Total already invoiced (not cancelled) for one option of a quotation."""
@@ -799,9 +864,10 @@ class Store:
                 "saved_items": self.catalog(),
                 "templates": self.list_templates(),
                 "invoices": [_row(r) for r in conn.execute(select(invoices).order_by(invoices.c.id))],
+                "waybills": [_row(r) for r in conn.execute(select(waybills).order_by(waybills.c.id))],
                 "company": self.company(),
             }
-        for q in data["quotations"] + data["invoices"]:
+        for q in data["quotations"] + data["invoices"] + data["waybills"]:
             q["data"] = json.loads(q["data"]) if q["data"] else None
         return data
 

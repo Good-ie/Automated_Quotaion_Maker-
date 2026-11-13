@@ -28,6 +28,9 @@ CASES = [
     ("Cable lugs one dozen 2,500", {"Qty": 12, "Unit cost (₦)": 2500}),
     ("3 phase changeover switch = 250,000", {"Qty": 1, "Description": "3 phase changeover switch"}),
     ("4 core armoured cable 16mm = 12,500 x 30", {"Qty": 30, "Unit cost (₦)": 12500}),
+    ("Cat 6 Network Cable 2 x 187,000", {"Qty": 2, "Unit cost (₦)": 187000, "Description": "Cat 6 Network Cable"}),
+    ("Battery 200AH 16 x 320k", {"Qty": 16, "Unit cost (₦)": 320000, "Description": "Battery 200AH"}),
+    ("UPS battery 4 * 45000", {"Qty": 4, "Unit cost (₦)": 45000, "Description": "UPS battery"}),
     # --- spec numbers are not quantities ---
     ("Battery 12V 100 = 320,000", {"Qty": 1, "Unit cost (₦)": 320000, "Note": "Check qty"}),
     ("10KVA UPS = 1,450,000", {"Qty": 1, "Model no.": "", "Description": "10KVA UPS"}),
@@ -81,6 +84,34 @@ IGNORED = [
     "[12/10/25, 9:41:10 AM] Josiah: Pls prepare quotation, markup 15%",
     "Thanks",
     "Add VAT",
+    "Item Code | Description | Qty | Unit Price",
+    "S/N Model No Descriptions Unit Cost Qty Total Cost Availability",
+]
+
+# Raw text exactly as the picture reader (Tesseract) returned it for real-looking pictures,
+# with the items that must come out after clean-up.
+PICTURES = [
+    ("WhatsApp screenshot", """Good morning sir, pls prepare quotation for
+PAL 10:40 AM OO
+16 nos 200AH battery @ 320,000
+10:41 AM OO
+Changeover switch 2pcs = 85,000 each
+10:42 AM O0
+APC Smart UPS SRT10KXLI 10kVA - N4,850,000 (
+1 unit) import 6 weeks 10:43 AM OO
+Installation and commissioning = 250,000
+10:44 AMO
+Markup 15%, add VAT
+10:45 AMO""", [("", "200AH battery", 16, 320000), ("", "Changeover switch", 2, 85000),
+                  ("SRT10KXLI", "APC Smart UPS 10kVA", 1, 4850000), ("", "Installation and commissioning", 1, 250000)]),
+    ("photo of a spreadsheet on a PC screen", """——————<— —
+Qty Unit Price
+Item Code Description
+{TACOO195 iPhone 11 Screen 30 25,000
+ITACOO98 Logitech M90 Wired Mouse 15 7,500
+ITACO186 Apple USB-C to MagSafe 3 Cable (2M) 10 45,000
+———————————————""", [("ITAC00195", "iPhone 11 Screen", 30, 25000), ("ITAC0098", "Logitech M90 Wired Mouse", 15, 7500),
+                    ("ITAC0186", "Apple USB-C to MagSafe 3 Cable (2M)", 10, 45000)]),
 ]
 
 
@@ -104,6 +135,18 @@ def check_cases():
     return failures
 
 
+def check_pictures():
+    from image_reader import clean
+
+    failures = []
+    for name, raw, expected in PICTURES:
+        items = parse_message(clean(raw), "").items
+        got = [(i["Model no."], i["Description"], i["Qty"], i["Unit cost (₦)"]) for i in items]
+        if got != expected:
+            failures.append(f"{name}: expected {expected}, got {got}")
+    return failures
+
+
 def check_instructions():
     s = parse_message("Pls prepare quotation, markup 15%\n5% discount\nadd VAT\nBattery 320k").suggestions
     failures = []
@@ -120,13 +163,17 @@ def test_cases():
     assert not check_cases(), "\n".join(check_cases())
 
 
+def test_pictures():
+    assert not check_pictures(), "; ".join(check_pictures())
+
+
 def test_instructions():
     assert not check_instructions(), "\n".join(check_instructions())
 
 
 if __name__ == "__main__":
-    problems = check_cases() + check_instructions()
-    total = len(CASES) + len(IGNORED) + 1
+    problems = check_cases() + check_instructions() + check_pictures()
+    total = len(CASES) + len(IGNORED) + 1 + len(PICTURES)
     for p in problems:
         print("FAIL", p)
     print(f"\n{total - len(problems)} / {total} checks passed" if problems else f"All {total} checks passed")

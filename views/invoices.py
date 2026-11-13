@@ -13,10 +13,9 @@ import streamlit as st
 import invoice_engine as ie
 import quote_engine as qe
 import store as db
-from views import common
+from views import common, items
 
 STATUS_LABELS = {"unpaid": "Unpaid", "part_paid": "Part paid", "paid": "Paid", "cancelled": "Cancelled"}
-LINE_COLUMNS = ["Model no.", "Qty", "Description", "Unit price (₦)"]
 LOGO_FILE = Path(__file__).resolve().parent.parent / "assets" / "resypl_logo.png"
 
 
@@ -64,18 +63,23 @@ def _file_name(kind: str, record: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# On a quotation: list its invoices and create a new one
+# The invoice form: from a quotation, brand new, or the next part of a job
 # ---------------------------------------------------------------------------
+def _show_new_invoice(origin: str) -> None:
+    """Success message and downloads for an invoice just made from this form."""
+    just_made = st.session_state.get("new_invoice")
+    if just_made and just_made["origin"] == origin:
+        st.success(f"Invoice **{just_made['number']}** saved.", icon=":material/check_circle:")
+        common.download_buttons(just_made["data"], just_made.get("pdf"), just_made["file_name"],
+                                f"new_invoice_download_{origin}")
+        st.caption("For its waybill or to record payment, open **My invoices** (admin: **All invoices**).")
+
+
 def quote_section(q: dict) -> None:
     store = common.get_store()
     st.markdown("**Invoices for this quotation**")
-
-    just_made = st.session_state.get("new_invoice")
-    if just_made and just_made["quote_id"] == q["id"]:
-        st.success(f"Invoice **{just_made['number']}** saved.", icon=":material/check_circle:")
-        common.download_buttons(just_made["data"], just_made.get("pdf"), just_made["file_name"],
-                                f"new_invoice_download_{q['id']}")
-        st.caption("For the waybill or to record payment, open the **Invoices** tab.")
+    origin = f"inv_{q['id']}"
+    _show_new_invoice(origin)
 
     existing = store.invoices_for_quote(q["id"])
     if existing:
@@ -95,58 +99,82 @@ def quote_section(q: dict) -> None:
         if not existing:
             st.caption("Invoices can only be made from an active quotation with its items saved.")
         return
-    label = "Create invoice" if not existing else "Create another invoice (next part or balance)"
-    with st.expander(label, icon=":material/receipt_long:", expanded=not existing):
-        _create_form(q)
-
-
-def _create_form(q: dict) -> None:
-    store = common.get_store()
-    user = common.user()
     payload = q["data"]
     options, pricing = qe.options_from_payload(payload)
     head = payload["header"]
-    k = f"inv_{q['id']}"
+    label = "Create invoice" if not existing else "Create another invoice (next part or balance)"
+    with st.expander(label, icon=":material/receipt_long:", expanded=not existing):
+        if len(options) > 1:
+            idx = st.radio("Which option did the client accept?", list(range(len(options))), horizontal=True,
+                           format_func=lambda i: f"Option {i + 1}: {options[i].title}", key=f"{origin}_opt")
+        else:
+            idx = 0
+        prefill = {
+            "client_name": q["client_name"], "client_address": head.get("client_address", ""),
+            "attention": head.get("attention", ""),
+            "lines": [{"model": ln["model"], "qty": ln["qty"], "desc": ln["desc"], "unit": ln["unit"]}
+                      for ln in options[idx].lines],
+            "discount_pct": pricing.discount_pct, "vat_enabled": pricing.vat_enabled, "vat_pct": pricing.vat_pct,
+        }
+        invoice_form(origin, prefill, already=store.invoiced_so_far(q["id"], idx), quote=q, option_index=idx,
+                     items_key=f"{origin}_lines_{idx}")
 
-    if len(options) > 1:
-        idx = st.radio("Which option did the client accept?", list(range(len(options))), horizontal=True,
-                       format_func=lambda i: f"Option {i + 1}: {options[i].title}", key=f"{k}_opt")
-    else:
-        idx = 0
-    opt = options[idx]
-    already = store.invoiced_so_far(q["id"], idx)
 
+def direct_invoice() -> None:
+    """New invoice without a quotation."""
+    origin = "direct_inv"
+    st.caption("Make an invoice straight away, without a quotation. Type or paste the items with their "
+               "**final prices to the client** (or add a markup %).")
+    _show_new_invoice(origin)
+    blank = {"client_name": "", "client_address": "", "attention": "", "lines": [],
+             "discount_pct": 0.0, "vat_enabled": True, "vat_pct": 7.5}
+    invoice_form(origin, blank, already=0.0, direct=True)
+
+
+def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = None, option_index: int = 0,
+                 job_id: int | None = None, direct: bool = False, items_key: str | None = None) -> None:
+    store = common.get_store()
+    user = common.user()
+
+    if direct:
+        c1, c2 = st.columns([2, 1])
+        client_name = c1.text_input("Client", key=f"{k}_client", placeholder="e.g. Pladis Foods Nigeria Limited")
+        attention = c2.text_input("Attention (ATTN TO)", key=f"{k}_attn")
+        client_address = st.text_area("Client address", key=f"{k}_addr", height=80)
     c1, c2, c3 = st.columns(3)
     inv_date = c1.date_input("Invoice date", value=db.today(), format="DD/MM/YYYY", key=f"{k}_date")
     days = c2.number_input("Payment terms (days)", min_value=0, max_value=365, value=45, step=5, key=f"{k}_days",
                            help="Printed as e.g. '45 Days Net'. The due date is worked out from it.")
-    attention = c3.text_input("Attention (ATTN TO)", value=head.get("attention", ""), key=f"{k}_attn")
+    lpo_number = c3.text_input("LPO number", value=prefill.get("lpo_number", ""), placeholder="e.g. PO-16967-01",
+                               key=f"{k}_lpo")
     c1, c2 = st.columns(2)
-    lpo_number = c1.text_input("LPO number", placeholder="e.g. PO-16967-01", key=f"{k}_lpo")
-    lpo_date = c2.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date")
-    client_name = st.text_input("Client", value=q["client_name"], key=f"{k}_client")
-    client_address = st.text_area("Client address", value=head.get("client_address", ""), height=80, key=f"{k}_addr")
+    lpo_date = c1.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date",
+                             help="Leave empty if there is no LPO." if not prefill.get("lpo_date") else
+                             f"Previous invoice: {prefill['lpo_date']}")
+    if not direct:
+        attention = c2.text_input("Attention (ATTN TO)", value=prefill.get("attention", ""), key=f"{k}_attn")
+        client_name = st.text_input("Client", value=prefill["client_name"], key=f"{k}_client")
+        client_address = st.text_area("Client address", value=prefill.get("client_address", ""), height=80,
+                                      key=f"{k}_addr")
 
-    st.markdown("**Items** (client prices after markup). Change them if the LPO differs from the quotation.")
-    df = pd.DataFrame(
-        [{"Model no.": ln["model"], "Qty": ln["qty"], "Description": ln["desc"], "Unit price (₦)": ln["unit"]}
-         for ln in opt.lines],
-        columns=LINE_COLUMNS,
-    )
-    edited = st.data_editor(
-        df, key=f"{k}_lines_{idx}", num_rows="dynamic", hide_index=True,
-        column_config={
-            "Model no.": st.column_config.TextColumn(width="small"),
-            "Qty": st.column_config.NumberColumn(min_value=1, step=1, default=1, required=True),
-            "Description": st.column_config.TextColumn(width="large", required=True),
-            "Unit price (₦)": st.column_config.NumberColumn(min_value=0.0, format="accounting", default=0.0),
-        },
-    )
+    markup = 0.0
+    if direct:
+        st.markdown("**Items**: paste the list, add a picture, or type in the table.")
+        raw = items.text_and_pictures(f"{k}_raw", "e.g.\nCat 6 Network Cable 2 x 187,000\n"
+                                                  "25mm PVC Flex Pipes 4 pcs 19,800\nLogistics 39,600")
+        tag, parsed = items.parsed(f"{k}_raw", raw)
+        rows = items.item_table(f"{k}_lines_{tag}", items.from_parsed(parsed), with_price=True)
+        markup = st.number_input("Markup on these prices (%)", min_value=0.0, value=0.0, step=5.0, key=f"{k}_markup",
+                                 help="Leave at 0 if the prices above are already the final prices to the client.")
+    else:
+        st.markdown("**Items** (client prices after markup). Change them if the LPO differs.")
+        rows = items.item_table(items_key or f"{k}_lines", prefill["lines"], with_price=True)
+
     c1, c2, c3 = st.columns(3)
-    discount = c1.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=float(pricing.discount_pct),
-                               step=0.5, key=f"{k}_discount")
-    vat_on = c2.toggle("Charge VAT", value=bool(pricing.vat_enabled), key=f"{k}_vat_on")
-    vat_pct = c3.number_input("VAT (%)", min_value=0.0, value=float(pricing.vat_pct), step=0.5,
+    discount = c1.number_input("Discount (%)", min_value=0.0, max_value=100.0,
+                               value=float(prefill.get("discount_pct", 0.0)), step=0.5, key=f"{k}_discount")
+    vat_on = c2.toggle("Charge VAT", value=bool(prefill.get("vat_enabled", True)), key=f"{k}_vat_on")
+    vat_pct = c3.number_input("VAT (%)", min_value=0.0, value=float(prefill.get("vat_pct", 7.5)), step=0.5,
                               disabled=not vat_on, key=f"{k}_vat")
 
     st.markdown("**How much to invoice now**")
@@ -162,15 +190,13 @@ def _create_form(q: dict) -> None:
         part_amt = st.number_input("Amount to invoice (₦)", min_value=0.0, value=0.0, step=10_000.0,
                                    format="%.2f", key=f"{k}_amt")
 
-    lines = [
-        ie.InvoiceLine(r["Model no."], r["Qty"], r["Description"], r["Unit cost (₦)"])
-        for r in qe.clean_rows(edited.rename(columns={"Unit price (₦)": "Unit cost (₦)"}).to_dict("records"))
-    ]
+    lines = [ie.InvoiceLine(r["model"], r["qty"], r["desc"], round(r["unit"] * (1 + markup / 100), 2))
+             for r in rows]
     inv = ie.Invoice(
         number="", date=inv_date, terms=f"{int(days)} Days Net", lpo_number=lpo_number.strip(),
-        lpo_date=ie.format_date(lpo_date) if lpo_date else "", attention=attention.strip(),
-        client_name=client_name.strip(), client_address=client_address.strip(), lines=lines,
-        discount_pct=discount, vat_enabled=vat_on, vat_pct=vat_pct, part_percent=part_pct,
+        lpo_date=ie.format_date(lpo_date) if lpo_date else prefill.get("lpo_date", ""),
+        attention=attention.strip(), client_name=client_name.strip(), client_address=client_address.strip(),
+        lines=lines, discount_pct=discount, vat_enabled=vat_on, vat_pct=vat_pct, part_percent=part_pct,
         part_amount=part_amt or None, previously_invoiced=already,
     )
     totals = inv.compute()
@@ -191,12 +217,14 @@ def _create_form(q: dict) -> None:
         problems.append("Add at least one item.")
     if not client_name.strip():
         problems.append("Enter the client name.")
-    if totals["due"] <= 0:
-        problems.append("Nothing left to invoice for this quotation." if already else "The amount to invoice is zero.")
+    if lines and totals["due"] <= 0:
+        problems.append("Nothing left to invoice for this job." if already else "The amount to invoice is zero.")
     elif totals["due"] > remaining + 0.005:
         problems.append(f"This is more than what is left to invoice ({common.naira(remaining)}).")
     for p in problems:
         st.warning(p, icon=":material/info:")
+    if any(line.unit <= 0 for line in lines):
+        st.caption(":orange[:material/warning:] Some items have no price. They will be printed at 0.00.")
 
     if st.button("Generate invoice", type="primary", icon=":material/receipt_long:", disabled=bool(problems),
                  key=f"{k}_go"):
@@ -208,22 +236,94 @@ def _create_form(q: dict) -> None:
 
         due_date = inv_date + dt.timedelta(days=int(days))
         new_id, number = store.save_invoice(
-            on=inv_date, data_for_number=document_data, quote_id=q["id"], quote_reference=q["reference"],
-            option_index=idx, username=user["username"], client_name=inv.client_name,
+            on=inv_date, data_for_number=document_data,
+            quote_id=quote["id"] if quote else None, quote_reference=quote["reference"] if quote else "",
+            option_index=option_index, job_id=job_id, username=user["username"], client_name=inv.client_name,
             invoice_date=inv_date.isoformat(), due_date=due_date.isoformat(),
             contract_total=totals["contract_total"], amount_due=totals["due"],
         )
         kind = (f"{part_pct:g}% part payment" if part_pct else "part payment" if part_amt
                 else "balance" if already else "full")
-        common.log("Created invoice", f"{number} · {inv.client_name} · {common.naira(totals['due'])} ({kind}) "
-                                      f"from {q['reference']}")
+        source = f"from {quote['reference']}" if quote else "next part of an earlier invoice" if job_id else "no quotation"
+        common.log("Created invoice", f"{number} · {inv.client_name} · {common.naira(totals['due'])} ({kind}, {source})")
         record = store.get_invoice(new_id)
         word = invoice_document(record)
         st.session_state.new_invoice = {
-            "quote_id": q["id"], "number": number, "data": word, "pdf": common.to_pdf(word),
+            "origin": k, "number": number, "data": word, "pdf": common.to_pdf(word),
             "file_name": _file_name("Invoice", record),
         }
+        if direct:  # empty the form so the same invoice is not made twice by accident
+            for key in [key for key in st.session_state if str(key).startswith(f"{k}_")]:
+                del st.session_state[key]
         st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Waybill without an invoice
+# ---------------------------------------------------------------------------
+def direct_waybill() -> None:
+    store = common.get_store()
+    k = "direct_wb"
+    st.caption("Make a waybill (delivery note) straight away. Waybills for an invoice are made from "
+               "**My invoices** and use its number automatically.")
+    just_made = st.session_state.get("new_waybill")
+    if just_made:
+        st.success("Waybill saved.", icon=":material/check_circle:")
+        common.download_buttons(just_made["data"], just_made.get("pdf"), just_made["file_name"], "new_waybill_dl")
+
+    c1, c2 = st.columns([2, 1])
+    client_name = c1.text_input("Client", key=f"{k}_client", placeholder="e.g. Pladis Foods Nigeria Limited")
+    attention = c2.text_input("Attention (ATTN TO)", key=f"{k}_attn")
+    client_address = st.text_area("Client address", key=f"{k}_addr", height=80)
+    c1, c2, c3 = st.columns(3)
+    on = c1.date_input("Delivery date", value=db.today(), format="DD/MM/YYYY", key=f"{k}_date")
+    invoice_number = c2.text_input("Invoice number", key=f"{k}_number", placeholder="Optional",
+                                   help="Type the invoice number if there is one; leave empty if not.")
+    terms = c3.text_input("Payment terms", key=f"{k}_terms", placeholder="Optional, e.g. 45 Days Net")
+    c1, c2 = st.columns(2)
+    lpo_number = c1.text_input("LPO number", key=f"{k}_lpo", placeholder="Optional")
+    lpo_date = c2.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date")
+
+    st.markdown("**Items**: paste the list, add a picture, or type in the table. Prices are not printed.")
+    raw = items.text_and_pictures(f"{k}_raw", "e.g.\n2 x Cat 6 Network Cable\n4 pcs 25mm PVC Flex Pipes")
+    tag, parsed = items.parsed(f"{k}_raw", raw)
+    rows = items.item_table(f"{k}_lines_{tag}", items.from_parsed(parsed), with_price=False)
+
+    problems = []
+    if not client_name.strip():
+        problems.append("Enter the client name.")
+    if not rows:
+        problems.append("Add at least one item.")
+    for p in problems:
+        st.warning(p, icon=":material/info:")
+    if st.button("Generate waybill", type="primary", icon=":material/local_shipping:", disabled=bool(problems),
+                 key=f"{k}_go"):
+        doc_data = ie.Invoice(
+            number=invoice_number.strip(), date=on, terms=terms.strip(), lpo_number=lpo_number.strip(),
+            lpo_date=ie.format_date(lpo_date) if lpo_date else "", attention=attention.strip(),
+            client_name=client_name.strip(), client_address=client_address.strip(),
+            lines=[ie.InvoiceLine(r["model"], r["qty"], r["desc"], 0.0) for r in rows], vat_enabled=False,
+        )
+        data = {"invoice": doc_data.to_dict(), "company": company_details()}
+        new_id = store.save_waybill(username=common.user()["username"], client_name=doc_data.client_name,
+                                    invoice_number=doc_data.number, delivery_date=on, items_count=len(rows),
+                                    data=data)
+        common.log("Made waybill", f"{doc_data.client_name} · {len(rows)} item(s) · delivered {on:%d %b %Y}"
+                                   + (f" · invoice {doc_data.number}" if doc_data.number else " · no invoice"))
+        record = store.get_waybill(new_id)
+        word = waybill_document_from(record["data"], on)
+        st.session_state.new_waybill = {
+            "data": word, "pdf": common.to_pdf(word),
+            "file_name": f"Waybill_{qe.safe_filename(doc_data.client_name)}_{on:%Y-%m-%d}.docx",
+        }
+        for key in [key for key in st.session_state if str(key).startswith(f"{k}_")]:
+            del st.session_state[key]
+        st.rerun()
+
+
+def waybill_document_from(data: dict, delivery_date: dt.date) -> bytes:
+    inv = ie.Invoice.from_dict(data["invoice"])
+    return ie.build_waybill(inv, delivery_date, data["company"], logo_bytes(), signature_bytes())
 
 
 # ---------------------------------------------------------------------------
@@ -241,17 +341,21 @@ def _frame(rows: list[dict], names: dict) -> pd.DataFrame:
 
 def render() -> None:
     store = common.get_store()
-    user = common.user()
     admin = common.is_admin()
-    rows = store.list_invoices(None if admin else user["username"])
-    if not rows:
-        st.caption(
-            "No invoices yet. To make one, open **" + ("All" if admin else "My")
-            + " quotations**, select the quotation and click **Create invoice**."
-        )
-        return
     names = {u["username"]: u["full_name"] for u in store.list_users()}
+    _invoices(store, admin, names)
+    st.divider()
+    _waybills(store, admin, names)
+
+
+def _invoices(store, admin: bool, names: dict) -> None:
+    rows = store.list_invoices(None if admin else common.user()["username"])
+    if not rows:
+        st.caption("No invoices yet. Make one in **New document › Invoice**, or from a quotation in **"
+                   + ("All" if admin else "My") + " quotations**.")
+        return
     df = _frame(rows, names)
+    df["quote_reference"] = df["quote_reference"].replace("", "No quotation")
     live = df[df["status"] != "cancelled"]
 
     with st.container(horizontal=True):
@@ -370,6 +474,24 @@ def _detail(invoice_id: int, names: dict) -> None:
                     common.log("Recorded payment", f"{rec['number']} · paid in full ({common.naira(rec['amount_due'])})")
                     st.rerun()
 
+        if rec["quote_id"] is None and rec["status"] != "cancelled":
+            job = rec["job_id"] or rec["id"]
+            so_far = store.invoiced_for_job(job)
+            left = round(rec["contract_total"] - so_far, 2)
+            if left > 0.005:
+                with st.expander(f"Invoice the rest of this job ({common.naira(left)} left)",
+                                 icon=":material/receipt_long:"):
+                    origin = f"next_{job}"
+                    _show_new_invoice(origin)
+                    prefill = {
+                        "client_name": inv.client_name, "client_address": inv.client_address,
+                        "attention": inv.attention, "lpo_number": inv.lpo_number, "lpo_date": inv.lpo_date,
+                        "lines": [{"model": ln.model, "qty": ln.qty, "desc": ln.desc, "unit": ln.unit}
+                                  for ln in inv.lines],
+                        "discount_pct": inv.discount_pct, "vat_enabled": inv.vat_enabled, "vat_pct": inv.vat_pct,
+                    }
+                    invoice_form(origin, prefill, already=so_far, job_id=job, items_key=f"{origin}_lines")
+
         if common.is_admin() and rec["status"] != "cancelled":
             with st.expander("Cancel this invoice", icon=":material/block:"):
                 st.caption("It stays in the records (marked cancelled), is left out of the totals, and its "
@@ -379,6 +501,45 @@ def _detail(invoice_id: int, names: dict) -> None:
                     store.cancel_invoice(invoice_id, reason.strip())
                     common.log("Cancelled invoice", f"{rec['number']} · {reason.strip()}")
                     st.rerun()
+
+
+def _waybills(store, admin: bool, names: dict) -> None:
+    st.markdown("**Waybills made without an invoice**")
+    rows = store.list_waybills(None if admin else common.user()["username"])
+    if not rows:
+        st.caption("None yet. Make one in **New document › Waybill**.")
+        return
+    df = pd.DataFrame(rows)
+    df["staff"] = df["username"].map(lambda u: names.get(u, u))
+    df["invoice_number"] = df["invoice_number"].replace("", "None")
+    event = st.dataframe(
+        df, key="wb_table", hide_index=True, on_select="rerun", selection_mode="single-row",
+        column_order=["delivery_date", "client_name", "invoice_number", "items_count"] + (["staff"] if admin else []),
+        column_config={
+            "delivery_date": st.column_config.DateColumn("Delivered", format="DD MMM YYYY"),
+            "client_name": "Client", "invoice_number": "Invoice no.",
+            "items_count": st.column_config.NumberColumn("Items"), "staff": "Made by",
+        },
+        alt="Waybills made without an invoice",
+    )
+    if not event.selection.rows:
+        return
+    wb_id = int(df.iloc[event.selection.rows[0]]["id"])
+    ready = st.session_state.get("wb_ready")
+    if ready and ready["id"] == wb_id:
+        common.download_buttons(ready["data"], ready.get("pdf"), ready["file_name"], "wb_list_dl")
+    elif st.button("Prepare waybill", icon=":material/local_shipping:", key=f"wb_prep_{wb_id}"):
+        rec = store.get_waybill(wb_id)
+        on = dt.date.fromisoformat(rec["delivery_date"])
+        with st.spinner("Making the waybill…"):
+            word = waybill_document_from(rec["data"], on)
+            pdf = common.to_pdf(word)
+        st.session_state.wb_ready = {
+            "id": wb_id, "data": word, "pdf": pdf,
+            "file_name": f"Waybill_{qe.safe_filename(rec['client_name'])}_{on:%Y-%m-%d}.docx",
+        }
+        common.log("Downloaded waybill", f"{rec['client_name']} · delivered {on:%d %b %Y}")
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------

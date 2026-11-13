@@ -18,7 +18,7 @@ import catalog
 import item_parser
 import quote_engine as qe
 import store as db
-from views import common
+from views import common, items
 
 COLUMNS = ["Model no.", "Description", "Qty", "Unit cost (₦)", "Availability", "Note"]
 PRICING_DEFAULTS = {"markup": 0.0, "discount": 0.0, "vat_on": False, "vat_pct": 7.5}
@@ -44,7 +44,7 @@ def start_new_quote() -> None:
     st.session_state.draft_offer_done = True
     for key in FORM_KEYS + ("generated",):
         st.session_state.pop(key, None)
-    for key in [k for k in st.session_state if str(k).startswith("parsed_")]:
+    for key in [k for k in st.session_state if str(k).startswith(("parsed_", "raw_1_pics", "raw_2_pics"))]:
         del st.session_state[key]
     st.session_state.update(PRICING_DEFAULTS)
     st.session_state.quote_date = db.today()
@@ -167,6 +167,7 @@ def option_editor(n: int, pricing: qe.Pricing, default_availability: str):
         help="Paste the message as staff wrote it. Greetings are ignored; quantities, prices "
         "(320k, 1.45m, ₦85,000), availability and instructions like 'markup 15%' are picked up.",
     )
+    items.picture_box(f"raw_{n}")
     text_key, result = read_message(n, raw, default_availability)
     df = pd.DataFrame(result.items, columns=COLUMNS)
 
@@ -292,6 +293,8 @@ def render() -> None:
 
     # ---------------------------------------------------------------- sidebar
     with st.sidebar:
+        st.markdown("**Quotation settings**")
+        st.caption("Used by the Quotation form. Invoices and waybills have their own fields.")
         st.button(
             "Start a new quotation",
             icon=":material/note_add:",

@@ -54,7 +54,17 @@ Word template. Nothing is lost when the app restarts. Total cost: ₦0.
 * **10-minute sessions:** after signing in, a refresh keeps you signed in. After 10 minutes with no activity you are signed out automatically and the session key is deleted (from the browser and the database). Signing out, an admin switching an account off, or an admin password reset also delete it immediately.
 * **Drafts:** the quotation being prepared is saved as you work. After signing in again, the app offers to continue it, with your edits intact. The admin overview lists unfinished quotations.
 
+### 🖼️ Items from pictures
+Under every **Paste items** box there is **Or add pictures**: upload WhatsApp/computer screenshots or
+clear photos of a screen or printed list. The free Tesseract reader (installed on Streamlit Cloud from
+`packages.txt`) turns the picture into text, which is put in the box for staff to check, then read like
+pasted text. Screenshots read best; handwriting does not read well.
+
 ### 🧾 Invoices and waybills
+* **New document** tab: choose **Quotation**, **Invoice** or **Waybill**. Invoices and waybills can be made
+  straight away, without a quotation or invoice. A direct invoice takes the final client prices (optional
+  markup %); its next part or balance is made from the invoice in **My invoices**. A direct waybill leaves the
+  invoice number for staff to fill in (or empty).
 * **Create invoice** (any staff member): open a quotation in **My quotations**, then **Create invoice**. Everything is filled in from the quotation (client prices after markup); add the LPO number and date, adjust items if the LPO differs, choose the payment terms (default 45 days).
 * **Part payments are flexible:** invoice the full amount, any **percentage**, or a **fixed amount**. The next invoice for the same quotation starts from what is left (balance), and the app never lets the total go over the contract value.
 * Invoice numbers: `RESYPL/<year>/<month>/<number>`, one sequence for the whole company.

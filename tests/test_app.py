@@ -27,6 +27,11 @@ def check(ok: bool, message: str) -> None:
         failures.append(message)
 
 
+def main_tabs(app):
+    """The main tab names (the inner Quotation / Invoice / Waybill tabs start with an icon)."""
+    return [t.label for t in app.tabs if not t.label.startswith(":material")]
+
+
 def button(at, label):
     return next(b for b in at.button if b.label == label)
 
@@ -61,7 +66,7 @@ text(at, "Password").input("secret123")
 text(at, "Repeat password").input("secret123")
 button(at, "Create admin account").click().run()
 check(not at.exception and "user" in at.session_state, f"admin created and signed in {errors(at)}")
-check([t.label for t in at.tabs][:5] == ["New quotation", "All quotations", "All invoices", "Saved items", "Admin"],
+check(main_tabs(at)[:5] == ["New document", "All quotations", "All invoices", "Saved items", "Admin"],
       "admin sees 5 tabs")
 
 store = db.Store(os.environ["REHOBOTH_DATABASE_URL"])
@@ -122,7 +127,7 @@ check(any("Choose your own password" in s.value for s in at3.subheader), "tempor
 text(at3, "New password").input("jadepass1")
 text(at3, "Repeat new password").input("jadepass1")
 button(at3, "Change password").click().run()
-check([t.label for t in at3.tabs][:4] == ["New quotation", "My quotations", "My invoices", "Saved items"]
+check(main_tabs(at3) == ["New document", "My quotations", "My invoices", "Saved items"]
       and "Admin" not in [t.label for t in at3.tabs], "staff do not see the Admin tab")
 check(at3.session_state["quote_ref"].startswith("RSL/JA/"), "staff reference uses their initials")
 
@@ -160,7 +165,7 @@ auth.read_cookie = lambda: browser["cookie"]
 
 
 def signed_in(app):
-    return "user" in app.session_state and any(t.label == "New quotation" for t in app.tabs)
+    return "user" in app.session_state and any(t.label == "New document" for t in app.tabs)
 
 
 token = at.session_state["token"]
@@ -388,6 +393,71 @@ check(not boss.exception and any("Invoiced per month" in m.value for m in boss.m
       f"admin sees money per month {boss.exception}")
 acts = [a["action"] for a in store.activity()]
 check("Created invoice" in acts, "invoice creation is in the activity log")
+
+# 13. invoice without a quotation -------------------------------------------------------
+maker = new_app()
+sign_in(maker, "mary", "secret123")
+check([t.label.split(" ", 1)[1] for t in maker.tabs if t.label.startswith(":material")] == ["Quotation", "Invoice", "Waybill"],
+      f"New document offers Quotation | Invoice | Waybill: {[t.label for t in maker.tabs]}")
+widgets = {w.key: w for w in maker.text_input}
+widgets["direct_inv_client"].input("Pladis Foods Nigeria Limited")
+widgets["direct_inv_attn"].input("Babalola")
+widgets["direct_inv_lpo"].input("PO-16967-01")
+next(t for t in maker.text_area if t.key == "direct_inv_raw").input(
+    "Cat 6 Network Cable (2 pcs) 187,000\n25mm PVC Flex Pipes 4 pcs 19,800")
+maker.run()
+direct_total = (2 * 187_000 + 4 * 19_800) * 1.075  # 453,200 + 7.5% VAT
+check(any(f"{direct_total:,.2f}" in str(m.value) for m in maker.metric), f"direct invoice total ₦{direct_total:,.2f}")
+maker.session_state["direct_inv_mode"] = "Percentage"
+maker.run()
+next(n for n in maker.number_input if n.key == "direct_inv_pct").set_value(50.0)
+maker.run()
+next(b for b in maker.button if b.key == "direct_inv_go").click().run()
+direct = store.list_invoices()[0]
+check(direct["quote_id"] is None and direct["job_id"] == direct["id"] and direct["quote_reference"] == ""
+      and round(direct["amount_due"], 2) == round(direct_total / 2, 2),
+      f"direct invoice saved without a quotation, 50% part: {direct['number']} {direct['amount_due']}")
+check(not maker.session_state["direct_inv_client"] if "direct_inv_client" in maker.session_state else True,
+      "the form is emptied after generating, so it is not made twice")
+check(store.invoiced_for_job(direct["id"]) == round(direct_total / 2, 2), "the job remembers what was invoiced")
+
+
+def invoice_detail(invoice_id: int):
+    import streamlit as st
+
+    from views import invoices
+
+    st.session_state.setdefault("user", {"username": "mary", "full_name": "Mary Okon", "initials": "MJO",
+                                         "role": "admin", "must_change_password": False})
+    invoices._detail(invoice_id, {})
+
+
+detail = AppTest.from_function(invoice_detail, args=(direct["id"],), default_timeout=60)
+detail.run()
+check(not detail.exception and any(f"{direct_total / 2:,.2f}" in str(m.value) for m in detail.metric)
+      and any(b.key == f"next_{direct['id']}_go" for b in detail.button),
+      f"a part-paid direct invoice offers 'Invoice the rest' with the balance {detail.exception}")
+next(b for b in detail.button if b.key == f"next_{direct['id']}_go").click().run()
+rest = store.list_invoices()[0]
+check(rest["job_id"] == direct["id"] and round(rest["amount_due"], 2) == round(direct_total / 2, 2)
+      and "LESS: PREVIOUSLY INVOICED" in doc_text(invoice_views.invoice_document(store.get_invoice(rest["id"]))),
+      "the balance invoice belongs to the same job and shows what was invoiced before")
+
+# 14. waybill without an invoice ---------------------------------------------------------
+widgets = {w.key: w for w in maker.text_input}
+widgets["direct_wb_client"].input("Arkseco Nig. Ltd")
+next(t for t in maker.text_area if t.key == "direct_wb_raw").input("2 x Cat 6 Network Cable\n4 pcs 25mm PVC Flex Pipes")
+maker.run()
+next(b for b in maker.button if b.key == "direct_wb_go").click().run()
+waybill = store.list_waybills()[0] if store.list_waybills() else None
+check(waybill is not None and waybill["invoice_number"] == "" and waybill["items_count"] == 2,
+      f"waybill saved without an invoice number: {waybill}")
+wb_doc = doc_text(invoice_views.waybill_document_from(store.get_waybill(waybill["id"])["data"], db.today()))
+check("WAYBILL/DELIVERY" in wb_doc and "Arkseco Nig. Ltd" in wb_doc and "Cat 6 Network Cable" in wb_doc
+      and "187,000" not in wb_doc, "stand-alone waybill document has client and items, no prices")
+check({"Download PDF", "Download Word"} <= {b.label for b in maker.get("download_button")},
+      "stand-alone waybill offered as PDF and Word")
+check("Made waybill" in [a["action"] for a in store.activity()], "waybill is in the activity log")
 
 print(f"\n{'All checks passed' if not failures else f'{len(failures)} check(s) failed'}")
 store.engine.dispose()
