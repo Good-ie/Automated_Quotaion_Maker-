@@ -1,4 +1,4 @@
-/* Rehoboth Quotation Maker: motion layer.
+/* RESYPL Quotation Maker: motion layer.
    Colours come from the theme (resypl.com: emerald green + orange).
    Every animation targets a keyed container (.st-key-*) so nothing else is affected,
    and all motion is switched off for people who ask their system for reduced motion. */
@@ -40,16 +40,16 @@
   background-size: 200% 100%;
   animation: rq-flow 6s linear infinite;
 }
-/* the bolt icon in the title gives a soft flicker, like a charge */
-@keyframes rq-charge {
-  0%, 88%, 100% { opacity: 1; }
-  90% { opacity: 0.45; }
-  92% { opacity: 1; }
-  94% { opacity: 0.6; }
+/* the company logo: rounded corners and a soft shadow */
+.st-key-hero img {
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(6, 78, 59, 0.18);
 }
-.st-key-hero h1 [data-testid="stIconMaterial"] {
-  color: var(--rq-orange);
-  animation: rq-charge 5s ease-in-out infinite;
+/* on phones the title goes under the logo instead of being squeezed beside it */
+@media (max-width: 640px) {
+  .st-key-hero_row { flex-wrap: wrap; }
+  .st-key-hero_row > div { min-width: 100%; }
+  .st-key-hero h1 { font-size: 1.9rem; }
 }
 
 /* ---- 3. Total cards: fade in one after another, lift on hover ---- */

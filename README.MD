@@ -1,4 +1,4 @@
-# ⚡ Rehoboth Quotation Maker
+# RESYPL Quotation Maker
 
 A **Custom CPQ (Configure, Price, Quote) Automation Engine** specifically engineered for the electrical power and engineering industry. 
 

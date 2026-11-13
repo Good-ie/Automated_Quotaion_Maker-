@@ -1,4 +1,4 @@
-"""Rehoboth Quotation Maker: entry point.
+"""RESYPL Quotation Maker: entry point.
 
 Run locally:   streamlit run app.py
 Online:        deployed on Streamlit Community Cloud, data kept in Supabase (see README).
@@ -12,8 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from views import admin, auth, common, history, invoices, quote, saved_items
 
 st.set_page_config(
-    page_title="Rehoboth Quotation Maker",
-    page_icon=":material/request_quote:",
+    page_title="RESYPL Quotation Maker",
+    page_icon=str(Path(__file__).with_name("assets") / "logo_mark.png"),
     layout="wide",
 )
 st.html(Path(__file__).with_name("assets") / "animations.css")

@@ -101,10 +101,18 @@ def naira(amount: float) -> str:
     return f"₦{amount:,.2f}"
 
 
+APP_NAME = "RESYPL Quotation Maker"
+LOGO = Path(__file__).resolve().parent.parent / "assets" / "logo.jpg"
+
+
 def hero(caption: str) -> None:
+    """Company logo, app name and a one-line caption at the top of every screen."""
     with st.container(key="hero"):
-        st.title("Rehoboth Quotation Maker", icon=":material/bolt:")
-        st.caption(caption)
+        with st.container(horizontal=True, vertical_alignment="center", gap="medium", key="hero_row"):
+            st.image(str(LOGO), width=170)
+            with st.container(gap="small"):
+                st.title(APP_NAME)
+                st.caption(caption)
 
 
 def centered():
