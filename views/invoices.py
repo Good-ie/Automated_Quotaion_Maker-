@@ -114,7 +114,8 @@ def quote_section(q: dict) -> None:
             "attention": head.get("attention", ""),
             "lines": [{"model": ln["model"], "qty": ln["qty"], "desc": ln["desc"], "unit": ln["unit"]}
                       for ln in options[idx].lines],
-            "discount_pct": pricing.discount_pct, "vat_enabled": pricing.vat_enabled, "vat_pct": pricing.vat_pct,
+            "discount_pct": pricing.discount_pct, "extra_discount": pricing.extra_discount,
+            "vat_enabled": pricing.vat_enabled, "vat_pct": pricing.vat_pct,
         }
         invoice_form(origin, prefill, already=store.invoiced_so_far(q["id"], idx), quote=q, option_index=idx,
                      items_key=f"{origin}_lines_{idx}")
@@ -170,11 +171,16 @@ def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = 
         st.markdown("**Items** (client prices after markup). Change them if the LPO differs.")
         rows = items.item_table(items_key or f"{k}_lines", prefill["lines"], with_price=True)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     discount = c1.number_input("Discount (%)", min_value=0.0, max_value=100.0,
                                value=float(prefill.get("discount_pct", 0.0)), step=0.5, key=f"{k}_discount")
-    vat_on = c2.toggle("Charge VAT", value=bool(prefill.get("vat_enabled", True)), key=f"{k}_vat_on")
-    vat_pct = c3.number_input("VAT (%)", min_value=0.0, value=float(prefill.get("vat_pct", 7.5)), step=0.5,
+    extra_discount = c2.number_input(
+        "Additional discount (₦)", min_value=0.0, value=float(prefill.get("extra_discount", 0.0)), step=1000.0,
+        format="%.2f", key=f"{k}_extra_discount",
+        help="Optional. A fixed naira amount taken off after the % discount. Leave at 0 for none.",
+    )
+    vat_on = c3.toggle("Charge VAT", value=bool(prefill.get("vat_enabled", True)), key=f"{k}_vat_on")
+    vat_pct = c4.number_input("VAT (%)", min_value=0.0, value=float(prefill.get("vat_pct", 7.5)), step=0.5,
                               disabled=not vat_on, key=f"{k}_vat")
 
     st.markdown("**How much to invoice now**")
@@ -196,7 +202,8 @@ def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = 
         number="", date=inv_date, terms=f"{int(days)} Days Net", lpo_number=lpo_number.strip(),
         lpo_date=ie.format_date(lpo_date) if lpo_date else prefill.get("lpo_date", ""),
         attention=attention.strip(), client_name=client_name.strip(), client_address=client_address.strip(),
-        lines=lines, discount_pct=discount, vat_enabled=vat_on, vat_pct=vat_pct, part_percent=part_pct,
+        lines=lines, discount_pct=discount, extra_discount=extra_discount, vat_enabled=vat_on, vat_pct=vat_pct,
+        part_percent=part_pct,
         part_amount=part_amt or None, previously_invoiced=already,
     )
     totals = inv.compute()
@@ -488,7 +495,8 @@ def _detail(invoice_id: int, names: dict) -> None:
                         "attention": inv.attention, "lpo_number": inv.lpo_number, "lpo_date": inv.lpo_date,
                         "lines": [{"model": ln.model, "qty": ln.qty, "desc": ln.desc, "unit": ln.unit}
                                   for ln in inv.lines],
-                        "discount_pct": inv.discount_pct, "vat_enabled": inv.vat_enabled, "vat_pct": inv.vat_pct,
+                        "discount_pct": inv.discount_pct, "extra_discount": inv.extra_discount,
+                        "vat_enabled": inv.vat_enabled, "vat_pct": inv.vat_pct,
                     }
                     invoice_form(origin, prefill, already=so_far, job_id=job, items_key=f"{origin}_lines")
 

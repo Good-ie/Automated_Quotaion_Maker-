@@ -32,6 +32,7 @@ class Pricing:
     discount_pct: float = 0.0
     vat_enabled: bool = False
     vat_pct: float = 7.5
+    extra_discount: float = 0.0  # optional fixed naira amount off, after the % discount
 
 
 @dataclass
@@ -40,12 +41,13 @@ class QuoteOption:
     lines: list[dict] = field(default_factory=list)  # priced lines for the document
     subtotal: float = 0.0
     discount: float = 0.0
+    extra_discount: float = 0.0
     vat: float = 0.0
     total: float = 0.0
 
     @property
     def after_discount(self) -> float:
-        return self.subtotal - self.discount
+        return round(self.subtotal - self.discount - self.extra_discount, 2)
 
 
 def price_option(title: str, rows: list[dict], pricing: Pricing) -> QuoteOption:
@@ -74,6 +76,7 @@ def price_option(title: str, rows: list[dict], pricing: Pricing) -> QuoteOption:
         opt.subtotal += line_total
     opt.subtotal = round(opt.subtotal, 2)
     opt.discount = round(opt.subtotal * pricing.discount_pct / 100, 2)
+    opt.extra_discount = round(min(max(pricing.extra_discount or 0.0, 0.0), opt.subtotal - opt.discount), 2)
     opt.vat = round(opt.after_discount * pricing.vat_pct / 100, 2) if pricing.vat_enabled else 0.0
     opt.total = round(opt.after_discount + opt.vat, 2)
     return opt
@@ -260,20 +263,26 @@ def _fill_table(table, opt: QuoteOption, pricing: Pricing) -> None:
         for cell, value, align in zip(row.cells, values, _ALIGN):
             _set_cell(cell, value, align)
 
-    has_adjustments = opt.discount > 0 or pricing.vat_enabled
-    if has_adjustments:
-        _add_total_row(table, "SUB TOTAL", naira(opt.subtotal))
+    # totals laid out like the company's quotations:
+    # SUB TOTAL, 5% DISCOUNT, Additional Discount, DISCOUNTED TOTAL, 7.5% VAT, TOTAL
+    discounted = opt.discount > 0 or opt.extra_discount > 0
+    totals = []
+    if discounted or pricing.vat_enabled:
+        totals.append(("SUB TOTAL", opt.subtotal))
     if opt.discount > 0:
-        _add_total_row(table, f"DISCOUNT ({pricing.discount_pct:g}%)", f"-{naira(opt.discount)}")
-        if pricing.vat_enabled:
-            _add_total_row(table, "TOTAL AFTER DISCOUNT", naira(opt.after_discount))
+        totals.append((f"{pricing.discount_pct:g}% DISCOUNT", opt.discount))
+    if opt.extra_discount > 0:
+        totals.append(("Additional Discount", opt.extra_discount))
+    if discounted and pricing.vat_enabled:
+        totals.append(("DISCOUNTED TOTAL", opt.after_discount))
     if pricing.vat_enabled:
-        _add_total_row(table, f"VAT ({pricing.vat_pct:g}%)", naira(opt.vat))
-    _add_total_row(table, "GRAND TOTAL", naira(opt.total), highlight=True)
+        totals.append((f"{pricing.vat_pct:g}% VAT", opt.vat))
+    for label, amount in totals:
+        _add_total_row(table, label, naira(amount))
+    _add_total_row(table, "TOTAL", naira(opt.total), highlight=True)
 
     # keep the last item and the whole totals block on the same page
-    n_totals = 1 + int(has_adjustments) + (2 if opt.discount > 0 and pricing.vat_enabled else int(opt.discount > 0)) + int(pricing.vat_enabled)
-    for row in table.rows[-(n_totals + 1) : -1]:
+    for row in table.rows[-(len(totals) + 2) : -1]:
         for cell in row.cells:
             for p in cell.paragraphs:
                 p.paragraph_format.keep_with_next = True

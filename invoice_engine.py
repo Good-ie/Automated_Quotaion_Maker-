@@ -65,6 +65,7 @@ class Invoice:
     client_address: str
     lines: list[InvoiceLine]
     discount_pct: float = 0.0
+    extra_discount: float = 0.0  # optional fixed naira amount off, after the % discount
     vat_enabled: bool = True
     vat_pct: float = 7.5
     # part payment: leave both empty for a full invoice
@@ -76,7 +77,8 @@ class Invoice:
     def compute(self) -> dict:
         subtotal = round(sum(line.total for line in self.lines), 2)
         discount = round(subtotal * self.discount_pct / 100, 2)
-        after_discount = round(subtotal - discount, 2)
+        extra = round(min(max(self.extra_discount or 0.0, 0.0), subtotal - discount), 2)
+        after_discount = round(subtotal - discount - extra, 2)
         vat = round(after_discount * self.vat_pct / 100, 2) if self.vat_enabled else 0.0
         contract_total = round(after_discount + vat, 2)
         if self.part_percent:
@@ -87,7 +89,7 @@ class Invoice:
             due = round(contract_total - self.previously_invoiced, 2)
         balance = round(contract_total - self.previously_invoiced - due, 2)
         self.totals = {
-            "subtotal": subtotal, "discount": discount, "after_discount": after_discount,
+            "subtotal": subtotal, "discount": discount, "extra_discount": extra, "after_discount": after_discount,
             "vat": vat, "contract_total": contract_total, "due": due, "balance": balance,
         }
         return self.totals
@@ -439,8 +441,11 @@ def build_invoice(inv: Invoice, company: dict | None = None, logo: bytes | None 
 
     _total_row(t, "SUB TOTAL", totals["subtotal"], red=True)
     if totals["discount"]:
-        _total_row(t, f"DISCOUNT ({inv.discount_pct:g}%)", f"-{naira(totals['discount'])}", bold=False)
-        _total_row(t, "SUB TOTAL AFTER DISCOUNT", totals["after_discount"], red=True)
+        _total_row(t, f"{inv.discount_pct:g}% DISCOUNT", totals["discount"], bold=False)
+    if totals["extra_discount"]:
+        _total_row(t, "ADDITIONAL DISCOUNT", totals["extra_discount"], bold=False)
+    if totals["discount"] or totals["extra_discount"]:
+        _total_row(t, "DISCOUNTED TOTAL", totals["after_discount"], red=True)
     if inv.vat_enabled:
         _total_row(t, f"{inv.vat_pct:g}% VAT", totals["vat"], bold=False)
 

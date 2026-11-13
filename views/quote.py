@@ -21,12 +21,12 @@ import store as db
 from views import common, items
 
 COLUMNS = ["Model no.", "Description", "Qty", "Unit cost (₦)", "Availability", "Note"]
-PRICING_DEFAULTS = {"markup": 0.0, "discount": 0.0, "vat_on": False, "vat_pct": 7.5}
+PRICING_DEFAULTS = {"markup": 0.0, "discount": 0.0, "extra_discount": 0.0, "vat_on": False, "vat_pct": 7.5}
 OPTION_TITLES = {1: "REPLACEMENT OF 10KVA UPS (10MINS RUNTIME)", 2: "APC EASY UPS 10KVA WITH 100MINS RUNTIME"}
 # everything typed into a quotation; cleared by "Start a new quotation"
 FORM_KEYS = ("client_name", "client_address", "attention", "two_options", "raw_1", "raw_2", "title_1", "title_2")
 # simple fields kept in a draft (besides the date and each option's title, text and rows)
-DRAFT_FIELDS = ("client_name", "client_address", "attention", "quote_ref", "markup", "discount",
+DRAFT_FIELDS = ("client_name", "client_address", "attention", "quote_ref", "markup", "discount", "extra_discount",
                 "vat_on", "vat_pct", "default_availability", "two_options")
 
 
@@ -231,6 +231,10 @@ def option_editor(n: int, pricing: qe.Pricing, default_availability: str):
             st.metric("Sub total", common.naira(opt.subtotal), border=True)
             if opt.discount:
                 st.metric(f"Discount {pricing.discount_pct:g}%", f"-{common.naira(opt.discount)}", border=True)
+            if opt.extra_discount:
+                st.metric("Additional discount", f"-{common.naira(opt.extra_discount)}", border=True)
+            if opt.discount or opt.extra_discount:
+                st.metric("Discounted total", common.naira(opt.after_discount), border=True)
             if pricing.vat_enabled:
                 st.metric(f"VAT {pricing.vat_pct:g}%", common.naira(opt.vat), border=True)
             st.metric("Grand total", common.naira(opt.total), border=True)
@@ -320,6 +324,10 @@ def render() -> None:
         st.subheader("Pricing", icon=":material/payments:")
         markup = st.number_input("Markup (%)", min_value=0.0, step=5.0, key="markup")
         discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, step=0.5, key="discount")
+        extra_discount = st.number_input(
+            "Additional discount (₦)", min_value=0.0, step=1000.0, format="%.2f", key="extra_discount",
+            help="Optional. A fixed naira amount taken off after the % discount. Leave at 0 for none.",
+        )
         vat_on = st.toggle("Charge VAT", key="vat_on")
         vat_pct = st.number_input("VAT rate (%)", min_value=0.0, step=0.5, disabled=not vat_on, key="vat_pct")
         default_availability = st.text_input(
@@ -331,7 +339,7 @@ def render() -> None:
         st.subheader("Options", icon=":material/alt_route:")
         two_options = st.toggle("Offer an alternative (Option 2)", key="two_options")
 
-    pricing = qe.Pricing(markup, discount, vat_on, vat_pct)
+    pricing = qe.Pricing(markup, discount, vat_on, vat_pct, extra_discount)
 
     # ---------------------------------------------------------------- items
     if two_options:

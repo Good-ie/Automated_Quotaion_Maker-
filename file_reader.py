@@ -148,6 +148,24 @@ def items_region(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Each kind of file
 # ---------------------------------------------------------------------------
+def _page_picture(page):
+    """The scanned picture on a PDF page, at its original quality when possible."""
+    import pypdfium2 as pdfium
+    import pypdfium2.raw as pdfium_c
+
+    try:
+        pictures = list(page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,)))
+        if len(pictures) == 1:  # one scan filling the page: use it as it is
+            image = pictures[0].get_bitmap(render=False).to_pil()
+            if image.width >= 600:
+                return image
+    except (pdfium.PdfiumError, AttributeError, ValueError):
+        pass
+    # otherwise draw the page large enough for letters to be clear (~2400 px wide)
+    width_points = page.get_width() or 595
+    return page.render(scale=max(2.0, min(4.0, 2400 / width_points))).to_pil()
+
+
 def _pdf(data: bytes) -> str:
     import pypdfium2 as pdfium
 
@@ -166,8 +184,7 @@ def _pdf(data: bytes) -> str:
         scanned_pages += 1
         if not image_reader.available():
             raise FileReadError("This PDF is a scan. Reading scans works on the online app (it needs Tesseract).")
-        image = page.render(scale=2.5).to_pil()
-        texts.append(image_reader.read_image(image))
+        texts.append(image_reader.read_image(_page_picture(page)))
     if len(pdf) > MAX_PDF_PAGES:
         texts.append(f"(Only the first {MAX_PDF_PAGES} of {len(pdf)} pages were read.)")
     return "\n".join(texts)
@@ -200,8 +217,25 @@ def _docx(data: bytes) -> str:
             table_lines = table_to_lines(rows)
             item_tables.extend(line for line in table_lines if line.startswith(("Item Code:", "Description:")))
             lines.extend(table_lines)
+    if not item_tables:
+        # converted or older files may keep tables inside frames or other tables: look everywhere
+        for element in body.iter():
+            if element.tag.endswith("}tbl") and element.getparent() is not body:
+                table_lines = table_to_lines(_table_rows(docx.table.Table(element, document)))
+                item_tables.extend(line for line in table_lines if line.startswith(("Item Code:", "Description:")))
     # a document with an items table (a quotation, LPO...): only its item rows matter
     return "\n".join(item_tables) if item_tables else "\n".join(lines)
+
+
+def _table_rows(table) -> list[list[str]]:
+    rows = []
+    for row in table.rows:
+        cells, previous = [], None
+        for cell in row.cells:  # a merged cell repeats: blank the repeats so columns stay aligned
+            cells.append("" if cell._tc is previous else cell.text)
+            previous = cell._tc
+        rows.append(cells)
+    return rows
 
 
 def _xlsx(data: bytes) -> str:

@@ -108,6 +108,8 @@ def _detail(quote_id: int, names: dict) -> None:
             adjustments = [f"markup {pricing.markup_pct:g}%"] if pricing.markup_pct else []
             if pricing.discount_pct:
                 adjustments.append(f"discount {pricing.discount_pct:g}%")
+            if pricing.extra_discount:
+                adjustments.append(f"additional discount {common.naira(pricing.extra_discount)}")
             if pricing.vat_enabled:
                 adjustments.append(f"VAT {pricing.vat_pct:g}%")
             head = payload["header"]
