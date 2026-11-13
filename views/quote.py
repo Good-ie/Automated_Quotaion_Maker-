@@ -167,7 +167,7 @@ def option_editor(n: int, pricing: qe.Pricing, default_availability: str):
         help="Paste the message as staff wrote it. Greetings are ignored; quantities, prices "
         "(320k, 1.45m, ₦85,000), availability and instructions like 'markup 15%' are picked up.",
     )
-    items.picture_box(f"raw_{n}")
+    items.files_box(f"raw_{n}")
     text_key, result = read_message(n, raw, default_availability)
     df = pd.DataFrame(result.items, columns=COLUMNS)
 

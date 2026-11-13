@@ -90,7 +90,14 @@ def read_picture(data: bytes) -> str:
     tesseract = _tesseract()
     if tesseract is None:
         raise RuntimeError("Reading pictures needs Tesseract OCR, which is installed on the online app.")
-    image = prepare(Image.open(BytesIO(data)))
+    return read_image(Image.open(BytesIO(data)))
+
+
+def read_image(image: Image.Image) -> str:
+    """Text found in an already opened picture (also used for scanned PDF pages)."""
+    tesseract = _tesseract()
+    if tesseract is None:
+        raise RuntimeError("Reading pictures needs Tesseract OCR, which is installed on the online app.")
     # psm 4: a single column of lines of different sizes, like a chat or a list
-    text = tesseract.image_to_string(image, lang="eng", config="--psm 4")
+    text = tesseract.image_to_string(prepare(image), lang="eng", config="--psm 4")
     return clean(text)

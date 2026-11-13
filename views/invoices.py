@@ -159,7 +159,7 @@ def invoice_form(k: str, prefill: dict, *, already: float, quote: dict | None = 
 
     markup = 0.0
     if direct:
-        st.markdown("**Items**: paste the list, add a picture, or type in the table.")
+        st.markdown("**Items**: paste the list, add a file (PDF, Word, Excel, picture), or type in the table.")
         raw = items.text_and_pictures(f"{k}_raw", "e.g.\nCat 6 Network Cable 2 x 187,000\n"
                                                   "25mm PVC Flex Pipes 4 pcs 19,800\nLogistics 39,600")
         tag, parsed = items.parsed(f"{k}_raw", raw)
@@ -284,7 +284,7 @@ def direct_waybill() -> None:
     lpo_number = c1.text_input("LPO number", key=f"{k}_lpo", placeholder="Optional")
     lpo_date = c2.date_input("LPO date", value=None, format="DD/MM/YYYY", key=f"{k}_lpo_date")
 
-    st.markdown("**Items**: paste the list, add a picture, or type in the table. Prices are not printed.")
+    st.markdown("**Items**: paste the list, add a file (PDF, Word, Excel, picture), or type in the table. Prices are not printed.")
     raw = items.text_and_pictures(f"{k}_raw", "e.g.\n2 x Cat 6 Network Cable\n4 pcs 25mm PVC Flex Pipes")
     tag, parsed = items.parsed(f"{k}_raw", raw)
     rows = items.item_table(f"{k}_lines_{tag}", items.from_parsed(parsed), with_price=False)

@@ -1,4 +1,4 @@
-"""Shared item input: paste text or add pictures (screenshots / photos), then review."""
+"""Shared item input: paste text or add files (PDF, Word, Excel, pictures), then review."""
 from __future__ import annotations
 
 import hashlib
@@ -6,64 +6,55 @@ import hashlib
 import pandas as pd
 import streamlit as st
 
-import image_reader
+import file_reader
 import item_parser
 
-PICTURE_TYPES = ["png", "jpg", "jpeg", "webp", "bmp"]
-
-
-def _read_pictures(text_key: str) -> None:
-    """Callback: read newly added pictures and add their text to the text box."""
+def _read_files(text_key: str) -> None:
+    """Callback: read newly added files and add their text to the text box."""
     files = st.session_state.get(f"{text_key}_pics") or []
     done = st.session_state.setdefault(f"{text_key}_pics_done", set())
-    texts, failed = [], []
+    texts, problems = [], []
     for f in files:
         signature = (f.name, f.size)
         if signature in done:
             continue
         done.add(signature)
         try:
-            text = image_reader.read_picture(f.getvalue())
-        except RuntimeError as exc:  # OCR not installed on this computer
-            st.session_state[f"{text_key}_pics_msg"] = ("error", str(exc))
-            return
-        except (OSError, ValueError):
-            failed.append(f.name)
+            text = file_reader.read_file(f.name, f.getvalue())
+        except file_reader.FileReadError as exc:
+            problems.append(f"{f.name}: {exc}")
             continue
         if text.strip():
             texts.append(text)
         else:
-            failed.append(f.name)
+            problems.append(f"{f.name}: no items or text found. Try a clearer or straighter picture.")
     if texts:
         current = st.session_state.get(text_key, "") or ""
-        st.session_state[text_key] = (current.rstrip() + "\n" if current.strip() else "") + "\n".join(texts)
-    if texts and not failed:
-        st.session_state[f"{text_key}_pics_msg"] = (
-            "success", f"Read {len(texts)} picture(s). Check the text above. Fix anything misread, then review the items.")
-    elif failed:
-        st.session_state[f"{text_key}_pics_msg"] = (
-            "warning", f"No text could be read from: {', '.join(failed)}. Try a clearer or straighter picture.")
+        separator = chr(10)  # new line
+        st.session_state[text_key] = (current.rstrip() + separator if current.strip() else "") + separator.join(texts)
+    messages = []
+    if texts:
+        messages.append(("success", f"Read {len(texts)} file(s). Check the text above and the items below, and "
+                                    "delete any row that is not an item."))
+    messages += [("warning", p) for p in problems]
+    st.session_state[f"{text_key}_pics_msg"] = messages
 
 
-def picture_box(text_key: str) -> None:
-    """Upload box under a 'Paste items' text box; read text goes into that box."""
+def files_box(text_key: str) -> None:
+    """Upload box under a 'Paste items' text box; the text read goes into that box."""
     st.file_uploader(
-        "Or add pictures (screenshots or photos)",
-        type=PICTURE_TYPES,
+        "Or add files (PDF, Word, Excel, pictures)",
+        type=file_reader.ACCEPTED,
         accept_multiple_files=True,
         key=f"{text_key}_pics",
-        on_change=_read_pictures,
+        on_change=_read_files,
         args=(text_key,),
-        help="WhatsApp or computer screenshots read best. Photos of a screen or printed list work if they are "
-        "clear and straight. The text found is added to the box above for you to check.",
+        help="PDF, Word (.docx/.doc), Excel (.xlsx/.xls/.csv), text, or screenshots and photos. "
+        "From a full document (an LPO, a supplier quotation) only the items table is kept.",
     )
-    message = st.session_state.pop(f"{text_key}_pics_msg", None)
-    if message:
-        kind, text = message
-        getattr(st, kind)(text, icon={"success": ":material/check_circle:", "warning": ":material/warning:",
-                                      "error": ":material/error:"}[kind])
-    elif not image_reader.available():
-        st.caption(":material/info: Reading pictures works on the online app (it needs the free Tesseract reader).")
+    icons = {"success": ":material/check_circle:", "warning": ":material/warning:", "error": ":material/error:"}
+    for kind, text in st.session_state.pop(f"{text_key}_pics_msg", []):
+        getattr(st, kind)(text, icon=icons[kind])
 
 
 def text_and_pictures(text_key: str, placeholder: str) -> str:
@@ -75,7 +66,7 @@ def text_and_pictures(text_key: str, placeholder: str) -> str:
         help="Paste the message or list as it is. Quantities, prices (320k, 1.45m, ₦85,000) and model numbers "
         "are picked up.",
     )
-    picture_box(text_key)
+    files_box(text_key)
     return raw
 
 

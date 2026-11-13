@@ -525,6 +525,9 @@ def parse_line(raw: str, default_availability: str, sug: Suggestions) -> dict | 
                 notes.append(f"Check qty: line says {qty} but total ÷ unit price = {round(ratio)}.")
             elif not qty_given:
                 qty = int(round(ratio))
+                qty_given = True
+                # a table row "4 25mm PVC Flex Pipes 19,800 79,200": the leading 4 is that quantity
+                line = re.sub(rf"^\s*{qty}\s+(?=\S)", "", line)
         else:
             notes.append(f"Check price: total {total:,.0f} is not a multiple of unit price {unit:,.0f}.")
     elif total is not None:

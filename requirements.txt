@@ -6,3 +6,5 @@ num2words>=0.5
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 pytesseract>=0.3.10
+pypdfium2>=4.30
+openpyxl>=3.1

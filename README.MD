@@ -54,11 +54,16 @@ Word template. Nothing is lost when the app restarts. Total cost: ₦0.
 * **10-minute sessions:** after signing in, a refresh keeps you signed in. After 10 minutes with no activity you are signed out automatically and the session key is deleted (from the browser and the database). Signing out, an admin switching an account off, or an admin password reset also delete it immediately.
 * **Drafts:** the quotation being prepared is saved as you work. After signing in again, the app offers to continue it, with your edits intact. The admin overview lists unfinished quotations.
 
-### 🖼️ Items from pictures
-Under every **Paste items** box there is **Or add pictures**: upload WhatsApp/computer screenshots or
-clear photos of a screen or printed list. The free Tesseract reader (installed on Streamlit Cloud from
-`packages.txt`) turns the picture into text, which is put in the box for staff to check, then read like
-pasted text. Screenshots read best; handwriting does not read well.
+### 📎 Items from files and pictures
+Under every **Paste items** box there is **Or add files**. Staff can drop several at once:
+* **PDF** made on a computer (text read exactly) or **scanned PDF** (read like a picture), first 10 pages
+* **Word** (.docx, old .doc), **Excel** (.xlsx, old .xls), **CSV**, **text**
+* **Pictures**: WhatsApp/computer screenshots read best; clear, straight photos also work; handwriting does not
+
+Tables with headings (Item Code / Description / Qty / Unit Price ...) are read column by column, and from
+a whole document (an LPO, a supplier quotation) only the items table is kept: no letterhead, totals or
+bank details. The text found goes into the box for staff to check. All free: Tesseract and LibreOffice
+are installed on Streamlit Cloud from `packages.txt`; nothing is sent to an outside service.
 
 ### 🧾 Invoices and waybills
 * **New document** tab: choose **Quotation**, **Invoice** or **Waybill**. Invoices and waybills can be made
@@ -102,5 +107,5 @@ The template must contain a table whose header row has **exactly 7 columns** in 
 * `item_parser.py`: reads pasted messages into items.
 * `catalog.py`: the product memory (matching saved items and prices).
 * `quote_engine.py`: pricing, reference numbers and Word generation.
-* `tests/`: `test_parser.py` (item reader) and `test_app.py` (whole app).
+* `tests/`: `test_parser.py` (item reader), `test_files.py` (uploaded files) and `test_app.py` (whole app).
 * `.streamlit/config.toml`: colours and fonts. `.streamlit/secrets.example.toml`: secrets format.

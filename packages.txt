@@ -1,4 +1,5 @@
 libreoffice-writer-nogui
+libreoffice-calc-nogui
 fonts-crosextra-carlito
 fonts-liberation
 tesseract-ocr
