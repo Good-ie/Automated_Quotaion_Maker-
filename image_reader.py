@@ -72,17 +72,29 @@ def clean(text: str) -> str:
     for line in text.splitlines():
         line = _TICKS.sub("", line)
         line = _CLOCK.sub("", line).strip()
-        line = re.sub(r"^[{|\[](?=[A-Z]{2,})", "I", line)  # "{TAC00195": a leading I read as { or |
-        line = re.sub(r"\s{2,}", " ", line)
+        # "{TAC00195", "iTAC0149", "iITAC0149": a leading I read as {, |, [, i or l
+        line = re.sub(r"^[{|\[il]I?(?=[A-Z]{2,}[A-Z0-9]*\d)", "I", line)
+        line = line.replace("|", " ")  # table borders read as |
+        line = re.sub(r"\s{2,}", " ", line).strip()
+        if len(re.findall(r"[A-Za-z0-9]", line)) < 3 and len(re.findall(r"[^\w\s]", line)) >= 3:
+            continue  # rules, borders and other scraps ("———————— ll")
         if not re.search(r"[A-Za-z0-9]", line):
-            continue  # rules, borders and other scraps
+            continue
         line = _CODE.sub(_fix_code, line)
         starts_lower_or_closing = bool(re.match(r"[a-z)]|\d+\s*(?:unit|pcs|nos)\b", line))
         if lines and (_WRAPPED.search(lines[-1]) or (starts_lower_or_closing and lines[-1].count("(") > lines[-1].count(")"))):
             lines[-1] = f"{lines[-1]} {line}"
         else:
             lines.append(line)
-    return "\n".join(re.sub(r"\(\s+", "(", line) for line in lines)
+    return "\n".join(_balance(re.sub(r"\(\s+", "(", line)) for line in lines)
+
+
+def _balance(line: str) -> str:
+    """Drop a ")" with no "(" before it: a table border read as a bracket ("(A1965) 5) 120,000")."""
+    while line.count(")") > line.count("("):
+        cut = line.rfind(")")
+        line = line[:cut] + line[cut + 1:]
+    return line
 
 
 def read_picture(data: bytes) -> str:

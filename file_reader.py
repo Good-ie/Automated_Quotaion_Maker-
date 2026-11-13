@@ -93,6 +93,8 @@ def table_to_lines(rows: list[list]) -> list[str]:
     for row in rows[header_at + 1:]:
         fields = {}
         for role, value in zip(roles, row):
+            if not re.search(r"[A-Za-z0-9]", value):
+                continue  # signature lines "-------", borders
             if role and role != "skip" and value and role not in fields:
                 fields[role] = value
         desc = fields.get("desc", "")
@@ -100,6 +102,8 @@ def table_to_lines(rows: list[list]) -> list[str]:
             continue
         if any(_SUMMARY_ROW.match(cell) for cell in row if cell):
             continue  # SUB TOTAL / VAT / AMOUNT IN WORDS rows, wherever their label sits
+        if not desc and not any(fields.get(k) for k in ("qty", "unit", "total")):
+            continue  # a signature or footer row that ended up in the table
         if _SUMMARY_ROW.match(desc) or (not fields.get("qty") and not fields.get("unit") and not fields.get("total")
                                          and not fields.get("model")):
             continue  # SUB TOTAL / VAT rows, or a note under the table

@@ -112,6 +112,8 @@ ITACOO98 Logitech M90 Wired Mouse 15 7,500
 ITACO186 Apple USB-C to MagSafe 3 Cable (2M) 10 45,000
 ———————————————""", [("ITAC00195", "iPhone 11 Screen", 30, 25000), ("ITAC0098", "Logitech M90 Wired Mouse", 15, 7500),
                     ("ITAC0186", "Apple USB-C to MagSafe 3 Cable (2M)", 10, 45000)]),
+    ("scanned PDF page (border read as a bracket, I read as i)", """iITACO149 Apple MacBook Air Battery (A1965) 5) 120,000
+————————————————— ll""", [("ITAC0149", "Apple MacBook Air Battery (A1965)", 5, 120000)]),
 ]
 
 
