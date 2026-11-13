@@ -17,6 +17,54 @@
 }
 [data-testid="stMainBlockContainer"] {
   animation: rq-rise 0.6s ease-out both;
+  position: relative;
+  z-index: 1; /* content always sits above the background logo layers */
+}
+
+/* ---- 0. Company logo layered into the background ----
+   Layer A: the logo repeated in staggered rows, drifting slowly sideways AND
+            downwards (one tile per loop, so the movement never jumps).
+   Layer B: one large watermark that gently breathes (fades and grows).
+   Both are very faint and ignore clicks, so text stays easy to read. */
+@keyframes rq-drift {
+  from { background-position: 0 0; }
+  to   { background-position: 440px 300px; }
+}
+@keyframes rq-breathe {
+  0%   { opacity: 0.05; transform: scale(1); }
+  100% { opacity: 0.11; transform: scale(1.04); }
+}
+[data-testid="stMain"]::before,
+[data-testid="stMain"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+[data-testid="stMain"]::before {
+  background-image: url("app/static/logo_tile.png");
+  background-size: 440px 300px;
+  opacity: 0.07;
+  animation: rq-drift 90s linear infinite;
+}
+[data-testid="stMain"]::after {
+  background: url("app/static/logo_soft.png") no-repeat;
+  background-size: min(62vw, 780px) auto;
+  background-position: center 60%;
+  transform-origin: 50% 60%;
+  animation: rq-breathe 9s ease-in-out infinite alternate;
+}
+/* with the sidebar open, centre the watermark in the content area, not the whole screen */
+@media (min-width: 768px) {
+  .stApp:has([data-testid="stSidebar"][aria-expanded="true"]) [data-testid="stMain"]::after {
+    background-position: calc(50% + 150px) 60%;
+    transform-origin: calc(50% + 150px) 60%;
+  }
+}
+@media (max-width: 640px) {
+  [data-testid="stMain"]::before { background-size: 300px 205px; }
+  [data-testid="stMain"]::after { background-size: 88vw auto; }
 }
 
 /* ---- 2. Header: animated "power line" in brand colours under the title ---- */
@@ -40,10 +88,40 @@
   background-size: 200% 100%;
   animation: rq-flow 6s linear infinite;
 }
-/* the company logo: rounded corners and a soft shadow */
+/* the company logo: arrives with a soft zoom, then a light shine sweeps across it */
+@keyframes rq-logo-in {
+  from { opacity: 0; transform: scale(0.9) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes rq-shine {
+  0%        { transform: translateX(-130%) skewX(-20deg); }
+  22%, 100% { transform: translateX(230%) skewX(-20deg); }
+}
+@keyframes rq-glow {
+  0%, 100% { box-shadow: 0 4px 14px rgba(6, 78, 59, 0.18); }
+  50%      { box-shadow: 0 6px 22px rgba(16, 185, 129, 0.35); }
+}
 .st-key-hero img {
   border-radius: 10px;
-  box-shadow: 0 4px 14px rgba(6, 78, 59, 0.18);
+  animation: rq-logo-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+             rq-glow 6s ease-in-out 1s infinite;
+}
+.st-key-hero_row > div:first-child {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+}
+.st-key-hero_row > div:first-child::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-130%) skewX(-20deg);
+  animation: rq-shine 7s ease-in-out 1.4s infinite;
+  pointer-events: none;
 }
 /* on phones the title goes under the logo instead of being squeezed beside it */
 @media (max-width: 640px) {

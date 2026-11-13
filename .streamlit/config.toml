@@ -28,3 +28,6 @@ linkColor = "#A7F3D0"                 # emerald-200
 
 [client]
 toolbarMode = "minimal"
+
+[server]
+enableStaticServing = true  # serves the static/ folder (background logo images)
